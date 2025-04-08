@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "AI Writing Assistant",
+  "version": "1.0",
+  "description": "Helps generate writing prompts and correct grammar.",
+  "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
+  "host_permissions": ["https://generativelanguage.googleapis.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon-16.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "commands": {
+    "paste_ai_text": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+V"
+      },
+      "description": "Paste AI-generated text into the active input field"
+    }
+  }
+}

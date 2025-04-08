@@ -1,0 +1,153 @@
+/* General styles */
+body {
+    font-family: 'Poppins', sans-serif;
+    background-color: #f0f0f0;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 450px;
+    width: 350px;
+}
+
+/* Chat container */
+.chat-container {
+    background: #fff;
+    border-radius: 10px;
+    width: 100%;
+    max-width: 350px;
+    padding: 15px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    position: relative;
+}
+
+/* Theme Toggle Button */
+.theme-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+/* Chat Title */
+.chat-title {
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+/* Chat Box */
+.chat-box {
+    height: 280px;
+    overflow-y: auto;
+    padding: 10px;
+    border: 1px solid #ddd;
+    background: #fafafa;
+    border-radius: 5px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Message Bubbles */
+.message {
+    display: flex;
+    margin-bottom: 10px;
+    max-width: 80%;
+}
+
+.user-message {
+    justify-content: flex-end;
+}
+
+.ai-message {
+    justify-content: flex-start;
+}
+
+.user-message .bubble {
+    background-color: #007bff;
+    color: white;
+}
+
+.ai-message .bubble {
+    background-color: #e0e0e0;
+    color: black;
+}
+
+/* Chat bubble */
+.bubble {
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 14px;
+    max-width: 80%;
+}
+
+/* Typing Animation */
+.typing {
+    font-style: italic;
+    color: gray;
+}
+
+/* Chat input */
+.chat-input {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 10px;
+}
+
+textarea {
+    width: 100%;
+    height: 40px;
+    border-radius: 5px;
+    padding: 8px;
+    border: 1px solid #ddd;
+    resize: none;
+}
+
+/* Buttons */
+button {
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 5px;
+}
+
+button i {
+    color: #007bff;
+    transition: color 0.3s;
+}
+
+button:hover i {
+    color: #0056b3;
+}
+
+/* Dark Mode */
+.dark-mode {
+    background-color: #1e1e1e;
+    color: white;
+}
+
+.dark-mode .chat-container {
+    background: #2c2c2c;
+}
+
+.dark-mode .chat-title {
+    color: white;
+}
+
+.dark-mode .chat-box {
+    background: #333;
+    border-color: #444;
+}
+
+.dark-mode .bubble {
+    background: #555;
+    color: white;
+}

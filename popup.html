@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Writing Assistant</title>
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <div class="chat-container">
+        <!-- Theme Toggle -->
+        <button id="themeToggle" class="theme-btn"><i class="fas fa-moon"></i></button>
+
+        <h2 class="chat-title">AI Writing Assistant</h2>
+
+        <!-- Chat Box -->
+        <div id="chatBox" class="chat-box"></div>
+
+        <!-- Input Section -->
+        <div class="chat-input">
+            <textarea id="inputText" placeholder="Type your text here..."></textarea>
+            <button id="sendBtn"><i class="fas fa-paper-plane"></i></button>
+            <button id="copyBtn"><i class="fas fa-copy"></i></button>
+            <button id="injectBtn"><i class="fas fa-sign-in-alt"></i></button>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="popup.js"></script>
+
+</body>
+</html>
