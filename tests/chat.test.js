@@ -5,7 +5,9 @@ import {
     buildRequestBody,
     parseChatResponse,
     estimateTokens,
-    tokensFromResponse
+    tokensFromResponse,
+    isRateLimited,
+    summarizeRateLimit
 } from "../src/lib/chat.js";
 
 test("buildRequestBody includes prompt and system", () => {
@@ -47,4 +49,30 @@ test("tokensFromResponse falls back to an estimate when usage is absent", () => 
 test("MODES exposes the expected modes", () => {
     assert.deepEqual(Object.keys(MODES).sort(), ["chat", "explain", "grammar", "summarize", "writing"]);
     assert.equal(MODES.chat, "");
+});
+
+test("isRateLimited: false when allowance remains", () => {
+    assert.equal(isRateLimited({ remaining: 150, dailyLimit: { remaining: 7 } }), false);
+});
+
+test("isRateLimited: true when overall or daily is exhausted", () => {
+    assert.equal(isRateLimited({ remaining: 0, dailyLimit: { remaining: 7 } }), true);
+    assert.equal(isRateLimited({ remaining: 150, dailyLimit: { remaining: 0 } }), true);
+});
+
+test("isRateLimited: false when data is missing/unknown", () => {
+    assert.equal(isRateLimited(null), false);
+    assert.equal(isRateLimited({}), false);
+});
+
+test("summarizeRateLimit normalizes the payload", () => {
+    const rate = { remaining: 150, limit: 150, reset: 111, dailyLimit: { remaining: 7, limit: 7, reset: 222 } };
+    assert.deepEqual(summarizeRateLimit(rate), {
+        remaining: 150,
+        limit: 150,
+        dailyRemaining: 7,
+        dailyLimit: 7,
+        reset: 222
+    });
+    assert.equal(summarizeRateLimit(null), null);
 });

@@ -37,3 +37,30 @@ export function tokensFromResponse(data, inputText, outputText) {
     }
     return estimateTokens(inputText) + estimateTokens(outputText);
 }
+
+// --- Rate limiting (v0 /v1/rate-limits) --------------------------------------
+// The /v1/rate-limits endpoint returns, e.g.:
+//   { remaining, limit, reset, dailyLimit: { remaining, limit, reset, isWithinGracePeriod } }
+
+// True when either the overall or the daily allowance is exhausted.
+export function isRateLimited(rate) {
+    if (!rate || typeof rate !== "object") return false;
+    const overall = Number.isFinite(rate.remaining) ? rate.remaining : Infinity;
+    const daily = rate.dailyLimit && Number.isFinite(rate.dailyLimit.remaining)
+        ? rate.dailyLimit.remaining
+        : Infinity;
+    return overall <= 0 || daily <= 0;
+}
+
+// Normalize the rate-limit payload into a small, stable shape for clients.
+export function summarizeRateLimit(rate) {
+    if (!rate || typeof rate !== "object") return null;
+    const daily = rate.dailyLimit || {};
+    return {
+        remaining: rate.remaining,
+        limit: rate.limit,
+        dailyRemaining: daily.remaining,
+        dailyLimit: daily.limit,
+        reset: daily.reset != null ? daily.reset : (rate.reset != null ? rate.reset : null)
+    };
+}

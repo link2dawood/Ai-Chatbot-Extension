@@ -19,6 +19,20 @@ The popup couldn't get a valid reply from the backend. Work through these in ord
 
 The **Retry** button in the error bubble re-sends the last message once you've fixed the cause.
 
+## "Rate limit reached. Please try again later."
+
+The function checks v0's `GET /v1/rate-limits` before each request and returns **429** when
+your overall or **daily** allowance is exhausted (v0's free/grace tier is only a few
+requests per day). The error bubble shows this message; wait for the reset and click
+**Retry**. To see your current allowance:
+
+```bash
+curl -s https://api.v0.dev/v1/rate-limits -H "Authorization: Bearer $V0_API_KEY"
+# → {"remaining":150,"limit":150,"reset":...,"dailyLimit":{"remaining":7,"limit":7,...}}
+```
+
+A higher plan / usage-based billing raises these limits.
+
 ## CORS error in the console
 
 `Access to fetch ... has been blocked by CORS policy`.

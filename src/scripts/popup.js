@@ -34,6 +34,9 @@ document.addEventListener("DOMContentLoaded", function () {
     // Last request, so the Retry button can re-run it after a failure.
     let lastRequest = null;
 
+    // Guards against sending another request while one is in flight.
+    let isLoading = false;
+
     // Restore selected mode.
     modeSelect.value = localStorage.getItem("mode") || "chat";
     modeSelect.addEventListener("change", function () {
@@ -94,6 +97,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Shared by the send button and the Enter key.
     function sendMessage() {
+        if (isLoading) return;
+
         const userInput = inputText.value.trim();
         if (!userInput) return;
 
@@ -301,6 +306,8 @@ document.addEventListener("DOMContentLoaded", function () {
     // Fetch an AI-generated response from the Vercel function.
     async function generateResponse(input, system) {
         lastRequest = { input: input, system: system };
+        isLoading = true;
+        sendBtn.disabled = true;
         const skeleton = showSkeleton();
 
         try {
@@ -309,6 +316,15 @@ document.addEventListener("DOMContentLoaded", function () {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(buildRequestBody(input, system))
             });
+
+            // Rate limited — show the server's message (and reset time if given).
+            if (response.status === 429) {
+                let body = {};
+                try { body = await response.json(); } catch (e) { /* ignore */ }
+                skeleton.remove();
+                showError(body.error || "Rate limit reached. Please try again later.");
+                return;
+            }
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
@@ -333,6 +349,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 ? "Couldn't reach the AI service. Check your internet connection and try again."
                 : "The AI service didn't respond properly. Please try again.";
             showError(msg);
+        } finally {
+            isLoading = false;
+            updateCharCounter();
         }
     }
 
