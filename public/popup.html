@@ -4,16 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Writing Assistant</title>
-
-    <!-- FontAwesome (CDN) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="../src/styles/popup.css">
 </head>
 <body>
 
     <div class="chat-container">
-        <!-- Theme Toggle -->
-        <button id="themeToggle" class="theme-btn"><i class="fas fa-moon"></i></button>
+        <!-- Theme Toggle (icon set by JS) -->
+        <button id="themeToggle" class="theme-btn" title="Toggle theme"></button>
 
         <h2 class="chat-title">AI Writing Assistant</h2>
 
@@ -27,8 +24,19 @@
                 <option value="explain">💡 Explain</option>
             </select>
             <div class="toolbar-actions">
-                <button id="exportBtn" title="Export chat"><i class="fas fa-download"></i></button>
-                <button id="clearBtn" title="Clear chat"><i class="fas fa-trash"></i></button>
+                <div class="export-wrap">
+                    <button id="exportBtn" title="Export chat">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    </button>
+                    <div id="exportMenu" class="export-menu hidden">
+                        <button data-format="txt">Text (.txt)</button>
+                        <button data-format="md">Markdown (.md)</button>
+                        <button data-format="pdf">PDF</button>
+                    </div>
+                </div>
+                <button id="clearBtn" title="Clear chat">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
             </div>
         </div>
 
@@ -37,10 +45,16 @@
 
         <!-- Input Section -->
         <div class="chat-input">
-            <textarea id="inputText" placeholder="Type your text here..."></textarea>
-            <button id="sendBtn"><i class="fas fa-paper-plane"></i></button>
-            <button id="copyBtn"><i class="fas fa-copy"></i></button>
-            <button id="injectBtn"><i class="fas fa-sign-in-alt"></i></button>
+            <textarea id="inputText" placeholder="Type your text here... (Enter to send, Shift+Enter for newline)"></textarea>
+            <button id="sendBtn" title="Send">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+            </button>
+            <button id="copyBtn" title="Copy last reply">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+            <button id="injectBtn" title="Insert into page field">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            </button>
         </div>
 
         <!-- Character counter + token usage -->
@@ -50,8 +64,8 @@
         </div>
     </div>
 
-    <!-- JavaScript -->
-    <script src="../src/scripts/popup.js"></script>
+    <!-- JavaScript (ES module) -->
+    <script type="module" src="../src/scripts/popup.js"></script>
 
 </body>
 </html>

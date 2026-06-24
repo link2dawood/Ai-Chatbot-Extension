@@ -1,124 +1,115 @@
-# Gemini Chatbot Chrome Extension
-This Chrome extension brings the power of Google's Gemini API directly to your browser, allowing you to have intelligent conversations and get quick answers without leaving your current webpage.
+# AI Writing Assistant — Chrome Extension
 
-## ✨ Key Features
+A lightweight Manifest V3 Chrome extension that puts an AI chat assistant in your
+browser toolbar. It's **zero-setup for end users** — there is no API key to enter and
+nothing to configure. The extension talks to a small [Vercel](https://vercel.com)
+serverless function that holds the API key in an environment variable, so the key is
+never shipped inside the extension.
 
-* **Seamless Integration:** Access the chatbot with a simple click from your browser's toolbar.
-* **Powered by Gemini API:** Leverage the advanced natural language processing capabilities of Google's Gemini models.
-* **Contextual Awareness (Future):** We plan to add features that allow the chatbot to understand the context of the webpage you are currently viewing.
-* **Customizable Interface:** (Optional - if implemented) Configure the appearance of the chatbot window.
-* **Copy to Clipboard:** Easily copy responses from the chatbot.
-* **Lightweight and Fast:** Designed for minimal impact on your Browse experience.
+> Backend: the function proxies to the **Vercel AI Gateway** (default model `v0-mini`).
 
-## ⚙️ Installation
+## ✨ Features
 
-### Method 1: Loading Unpacked Extension (For Development and Testing)
+- **One-click chat** from the toolbar popup — type and get answers without leaving the page.
+- **Conversation modes** — Chat, Improve writing, Fix grammar, Summarize, Explain.
+- **Markdown rendering** — replies render bold, italic, code blocks, headings, and lists
+  (via a small, XSS-safe renderer — no remote scripts).
+- **Token counter** — shows approximate API tokens used this session.
+- **History management** — conversations persist locally; Clear and Export (Text / Markdown / PDF).
+- **Copy & Insert** — copy the last reply, or inject it into the focused field on the page.
+- **Keyboard** — Enter to send, Shift+Enter for a newline.
+- **Dark mode**, loading skeletons, and clear error messages with a Retry button.
 
-1.  **Clone the Repository:**
-    ```bash
-    git clone <repository_url>
-    cd <repository_directory>
-    ```
+## 🧱 Architecture
 
-2.  **Open Chrome Extensions:** Go to `chrome://extensions/` in your Chrome browser.
+```
+Toolbar popup (public/popup.html + src/scripts/popup.js)
+        │  POST { prompt, system }
+        ▼
+Vercel function (api/chat.js)  ──uses AI_GATEWAY_API_KEY (env var)──►  Vercel AI Gateway
+        ▲
+        │  { text, usage }
+        ◄
+```
 
-3.  **Enable Developer Mode:** Toggle the "Developer mode" switch in the top right corner.
+The API key lives only in a Vercel environment variable. End users install the extension
+and chat immediately — they never see or supply a key.
 
-4.  **Load Unpacked:** Click the "Load unpacked" button in the top left corner.
+## 📁 Project structure
 
-5.  **Select the Extension Directory:** Choose the directory where you cloned the repository.
+```
+manifest.json            MV3 manifest (loads from the repo root)
+icon-16.png              Toolbar icon
+public/
+  popup.html             Popup UI
+src/
+  scripts/popup.js       Popup logic (ES module)
+  lib/markdown.js        XSS-safe Markdown renderer (tested)
+  lib/chat.js            Request/response helpers + modes (tested)
+  styles/popup.css       Popup styles
+api/
+  chat.js                Vercel serverless proxy (holds the key server-side)
+tests/                   node:test unit tests
+.github/workflows/ci.yml Lint + test on every push/PR
+```
 
-### Method 2: Via Chrome Web Store (Coming Soon)
+## 🚀 Install (Load Unpacked)
 
-Once the extension is published on the Chrome Web Store, you will be able to install it directly from there. Stay tuned for updates!
+1. Clone this repo:
+   ```bash
+   git clone https://github.com/link2dawood/Ai-Chatbot-Extension.git
+   cd Ai-Chatbot-Extension
+   ```
+2. Open `chrome://extensions/` and enable **Developer mode** (top right).
+3. Click **Load unpacked** and select the repository root.
+4. Pin the extension and click its icon to start chatting.
 
-## 🚀 Usage
+> The extension only works once the backend is deployed and its URL is set — see below.
 
-1.  **Install the Extension:** Follow the installation instructions above.
+## 🔧 Backend setup (one-time, by the developer)
 
-2.  **Pin the Extension (Optional):** For easy access, you can pin the extension icon to your Chrome toolbar.
+The extension calls a Vercel function you deploy. Users do **not** do this.
 
-3.  **Open the Chatbot:** Click the extension icon in your toolbar. A chat window will pop up.
+1. Deploy to Vercel from the repo:
+   ```bash
+   vercel --prod
+   ```
+2. Add the API key as an environment variable (never commit it):
+   ```bash
+   vercel env add AI_GATEWAY_API_KEY production
+   vercel env add AI_MODEL production   # optional, defaults to v0-mini
+   ```
+3. Put your deployed URL into [`src/scripts/popup.js`](src/scripts/popup.js) — replace the
+   `API_ENDPOINT` value `https://your-app.vercel.app/api/chat` with your real URL.
+4. Reload the extension.
 
-4.  **Start Chatting:** Type your questions or prompts into the input field and press Enter or click the send button.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for details and [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+if something doesn't work.
 
-5.  **View Responses:** The chatbot's responses will appear in the chat window.
+## 🧪 Development
 
-## 🔑 API Key Configuration
+```bash
+npm test       # run unit tests (Node's built-in runner, no dependencies)
+npm run lint   # syntax-check all JS
+```
 
-This extension requires a Google Cloud Project with the Gemini API enabled and a corresponding API key.
+CI runs both on every push and pull request.
 
-1.  **Create a Google Cloud Project:** If you don't have one already, create a new project in the [Google Cloud Console](https://console.cloud.google.com/).
+## 🔒 Security & privacy
 
-2.  **Enable the Gemini API:**
-    * Navigate to the [API Library](https://console.cloud.google.com/apis/library) in your project.
-    * Search for "Generative Language API" (or similar, depending on the specific Gemini API being used).
-    * Enable the API.
-
-3.  **Create API Credentials:**
-    * Go to the [Credentials page](https://console.cloud.google.com/apis/credentials) in your project.
-    * Click "Create credentials" and select "API key".
-    * **Important Security Note:** For a public repository, you should **NOT** hardcode your API key directly into the extension's code. Instead, implement a secure method for users to provide their own API key. This could involve:
-        * **Storing in Chrome's `sync` or `local` storage:** Prompt the user to enter their API key the first time they use the extension and store it securely in their browser's storage.
-        * **Backend Proxy (Advanced):** For more complex applications, you might consider using a backend proxy to handle API calls, but this is likely overkill for a simple public extension.
-
-4.  **Configure the Extension:**
-    * **If using browser storage:** Modify the extension's code (specifically the part that makes the API call) to retrieve the API key from Chrome's storage. You will need to create a UI element (e.g., a settings page within the extension) where users can input their API key.
-
-    **Example (Conceptual - adapt to your actual implementation):**
-
-    In your extension's JavaScript code:
-
-    ```javascript
-    // Example using chrome.storage.sync
-    chrome.storage.sync.get(['geminiApiKey'], function(result) {
-      const apiKey = result.geminiApiKey;
-      if (apiKey) {
-        // Use the apiKey to make calls to the Gemini API
-        console.log("Gemini API Key found:", apiKey);
-        // ... your API call logic ...
-      } else {
-        console.log("Gemini API Key not found. Please configure in settings.");
-        // Optionally, display a message to the user to configure the API key.
-      }
-    });
-    ```
-
-    You would also need to implement a settings page (e.g., a popup or an options page) where users can input and save their API key using `chrome.storage.sync.set({'geminiApiKey': userInputValue})`.
-
-    **Remember to guide users in your extension's UI on how to obtain and enter their API key.**
-
-## 🤝 Contributing
-
-Contributions are welcome! If you'd like to contribute to this project, please follow these steps:
-
-1.  **Fork the Repository:** Create your own fork of this repository.
-2.  **Create a Branch:** Make your changes in a new branch.
-3.  **Make Your Changes:** Implement your desired features or bug fixes.
-4.  **Test Your Changes:** Ensure your changes are working correctly.
-5.  **Submit a Pull Request:** Once you're happy with your changes, submit a pull request to the main repository.
-
-Please ensure your code follows the existing style and includes appropriate comments.
+- No API key is stored in the extension; it lives in a Vercel environment variable.
+- A strict Content Security Policy (`script-src 'self'; object-src 'self'`) is enforced,
+  and all assets (icons, scripts, styles) are local — the extension makes no third-party
+  requests other than to your Vercel endpoint.
+- Permissions are minimal: `activeTab` and `scripting` (used only when you click **Insert**),
+  plus `host_permissions` for `https://*.vercel.app/*`.
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE). See the `LICENSE` file for more information.
+MIT — see [LICENSE](LICENSE) if present.
 
 ## ⚠️ Disclaimer
 
-This Chrome extension utilizes the Google Gemini API, which is a product of Google. By using this extension, you agree to comply with the [Google Cloud Terms of Service](https://cloud.google.com/terms/) and any applicable terms of service for the Gemini API.
-
-Please be aware that the responses generated by the Gemini API are based on the data it has been trained on and may not always be accurate or appropriate. Use your discretion when interpreting and acting upon the information provided by the chatbot.
-
-## 💬 Support
-
-If you encounter any issues or have any questions, please feel free to [open an issue](https://github.com/<your_github_username>/<your_repo_name>/issues).
-
-## 🙏 Acknowledgements
-
-* [Google](https://ai.google.dev/) for providing the powerful Gemini API.
-* (Optional: Mention any libraries or resources you used)
-
----
-
-**Thank you for checking out the Gemini Chatbot Chrome Extension!**
+AI responses may be inaccurate. Use your own judgment when acting on them. You are
+responsible for the AI provider account and any usage costs incurred by your deployed
+Vercel function.

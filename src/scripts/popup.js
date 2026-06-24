@@ -1,3 +1,6 @@
+import { renderMarkdown, escapeHtml } from "../lib/markdown.js";
+import { MODES, buildRequestBody, parseChatResponse, tokensFromResponse } from "../lib/chat.js";
+
 document.addEventListener("DOMContentLoaded", function () {
     const chatBox = document.getElementById("chatBox");
     const inputText = document.getElementById("inputText");
@@ -10,6 +13,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const modeSelect = document.getElementById("modeSelect");
     const clearBtn = document.getElementById("clearBtn");
     const exportBtn = document.getElementById("exportBtn");
+    const exportMenu = document.getElementById("exportMenu");
 
     // ---------------------------------------------------------------------
     // Configuration — the extension works out of the box, no user setup.
@@ -21,17 +25,14 @@ document.addEventListener("DOMContentLoaded", function () {
     const MAX_CHARS = 2000;
     // ---------------------------------------------------------------------
 
-    // Conversation modes — each maps to a system instruction sent to the API.
-    const MODES = {
-        chat: "",
-        writing: "You are a writing assistant. Improve the clarity, flow, grammar, and tone of the user's text while preserving its meaning. Return only the improved text.",
-        grammar: "You are a grammar and spelling corrector. Fix grammar, spelling, and punctuation in the user's text. Return only the corrected text, with no commentary.",
-        summarize: "Summarize the following text clearly and concisely, capturing the key points.",
-        explain: "Explain the following clearly and simply, as if to a curious beginner."
-    };
+    const MOON_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+    const SUN_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
 
     // Running token total for this session (persisted so it accumulates).
     let sessionTokens = parseInt(localStorage.getItem("tokenTotal") || "0", 10) || 0;
+
+    // Last request, so the Retry button can re-run it after a failure.
+    let lastRequest = null;
 
     // Restore selected mode.
     modeSelect.value = localStorage.getItem("mode") || "chat";
@@ -44,23 +45,32 @@ document.addEventListener("DOMContentLoaded", function () {
     updateCharCounter();
     updateTokenCounter();
 
-    // Toggle Dark Mode (Save to Local Storage)
-    themeToggle.addEventListener("click", function () {
-        document.body.classList.toggle("dark-mode");
-        let icon = themeToggle.querySelector("i");
-        icon.classList.toggle("fa-moon");
-        icon.classList.toggle("fa-sun");
-
-        localStorage.setItem("darkMode", document.body.classList.contains("dark-mode"));
-    });
-
-    // Check Dark Mode Preference
+    // Dark mode (persisted) — swaps the moon/sun SVG.
     if (localStorage.getItem("darkMode") === "true") {
         document.body.classList.add("dark-mode");
+    }
+    applyThemeIcon();
+
+    themeToggle.addEventListener("click", function () {
+        document.body.classList.toggle("dark-mode");
+        localStorage.setItem("darkMode", document.body.classList.contains("dark-mode"));
+        applyThemeIcon();
+    });
+
+    function applyThemeIcon() {
+        themeToggle.innerHTML = document.body.classList.contains("dark-mode") ? SUN_SVG : MOON_SVG;
     }
 
     // Live character counter + limit enforcement
     inputText.addEventListener("input", updateCharCounter);
+
+    // Enter sends; Shift+Enter inserts a newline.
+    inputText.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
 
     function updateCharCounter() {
         const len = inputText.value.length;
@@ -82,14 +92,9 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
-    function estimateTokens(text) {
-        // Rough heuristic when the API doesn't return usage (~4 chars/token).
-        return Math.ceil((text || "").length / 4);
-    }
-
-    // Send message
-    sendBtn.addEventListener("click", function () {
-        let userInput = inputText.value.trim();
+    // Shared by the send button and the Enter key.
+    function sendMessage() {
+        const userInput = inputText.value.trim();
         if (!userInput) return;
 
         if (userInput.length > MAX_CHARS) {
@@ -102,18 +107,20 @@ document.addEventListener("DOMContentLoaded", function () {
         updateCharCounter();
 
         generateResponse(userInput, MODES[modeSelect.value] || "");
-    });
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
 
     // Copy last AI response (raw text)
     copyBtn.addEventListener("click", function () {
-        let bubbles = chatBox.querySelectorAll(".ai-message .bubble");
+        const bubbles = chatBox.querySelectorAll(".ai-message:not(.error-message) .bubble");
         if (bubbles.length === 0) {
             alert("No text to copy!");
             return;
         }
 
-        let last = bubbles[bubbles.length - 1];
-        let lastResponse = last.dataset.raw || last.innerText;
+        const last = bubbles[bubbles.length - 1];
+        const lastResponse = last.dataset.raw || last.innerText;
         navigator.clipboard.writeText(lastResponse)
             .then(() => alert("Copied!"))
             .catch(err => console.error("Failed to copy:", err));
@@ -121,14 +128,14 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Inject last AI response into active input field (raw text)
     injectBtn.addEventListener("click", function () {
-        let bubbles = chatBox.querySelectorAll(".ai-message .bubble");
+        const bubbles = chatBox.querySelectorAll(".ai-message:not(.error-message) .bubble");
         if (bubbles.length === 0) {
             alert("No text to inject!");
             return;
         }
 
-        let last = bubbles[bubbles.length - 1];
-        let lastResponse = last.dataset.raw || last.innerText;
+        const last = bubbles[bubbles.length - 1];
+        const lastResponse = last.dataset.raw || last.innerText;
         chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
             chrome.scripting.executeScript({
                 target: { tabId: tabs[0].id },
@@ -149,25 +156,77 @@ document.addEventListener("DOMContentLoaded", function () {
         updateTokenCounter();
     });
 
-    // Export conversation as Markdown
-    exportBtn.addEventListener("click", function () {
-        let saved = JSON.parse(localStorage.getItem("chatHistory") || "[]");
+    // Export menu (Text / Markdown / PDF)
+    exportBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        exportMenu.classList.toggle("hidden");
+    });
+
+    exportMenu.addEventListener("click", function (e) {
+        const btn = e.target.closest("button[data-format]");
+        if (!btn) return;
+        exportMenu.classList.add("hidden");
+
+        const saved = JSON.parse(localStorage.getItem("chatHistory") || "[]");
         if (saved.length === 0) {
             alert("No conversation to export.");
             return;
         }
+
+        const format = btn.dataset.format;
+        if (format === "txt") {
+            downloadFile("conversation.txt", buildText(saved), "text/plain");
+        } else if (format === "md") {
+            downloadFile("conversation.md", buildMarkdown(saved), "text/markdown");
+        } else if (format === "pdf") {
+            exportPdf(saved);
+        }
+    });
+
+    // Close the export menu when clicking elsewhere.
+    document.addEventListener("click", function () {
+        exportMenu.classList.add("hidden");
+    });
+
+    function buildText(saved) {
+        return saved.map(m => `${m.sender === "user" ? "You" : "AI"}: ${m.text}`).join("\n\n");
+    }
+
+    function buildMarkdown(saved) {
         let md = "# AI Writing Assistant — Conversation\n\n";
         saved.forEach(function (m) {
             md += (m.sender === "user" ? "**You:**\n\n" : "**AI:**\n\n") + m.text + "\n\n---\n\n";
         });
-        let blob = new Blob([md], { type: "text/markdown" });
-        let url = URL.createObjectURL(blob);
-        let a = document.createElement("a");
+        return md;
+    }
+
+    function downloadFile(filename, content, mime) {
+        const url = URL.createObjectURL(new Blob([content], { type: mime }));
+        const a = document.createElement("a");
         a.href = url;
-        a.download = "conversation.md";
+        a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
-    });
+    }
+
+    // Print-to-PDF: open a clean printable page and trigger the print dialog.
+    // CSP-safe — print() is called from this window, not via an inline script.
+    function exportPdf(saved) {
+        const body = saved.map(m =>
+            `<div class="role">${m.sender === "user" ? "You" : "AI"}</div>` +
+            `<div class="msg">${escapeHtml(m.text)}</div>`
+        ).join("");
+        const html = '<!doctype html><html><head><meta charset="utf-8"><title>Conversation</title>' +
+            '<style>body{font-family:Arial,Helvetica,sans-serif;padding:32px;line-height:1.5;color:#222}' +
+            'h1{font-size:20px}.role{font-weight:bold;margin-top:16px}.msg{white-space:pre-wrap;margin:4px 0 12px}</style>' +
+            '</head><body><h1>AI Writing Assistant — Conversation</h1>' + body + '</body></html>';
+        const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+        const win = window.open(url, "_blank");
+        if (win) {
+            win.addEventListener("load", function () { win.focus(); win.print(); });
+        }
+        setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+    }
 
     // Function to insert text into the active tab
     function insertText(text) {
@@ -183,10 +242,10 @@ document.addEventListener("DOMContentLoaded", function () {
     // Add a message to the chat. AI messages render Markdown; the raw text is
     // kept on the element so copy/inject/export use the original.
     function addMessage(text, sender) {
-        let messageDiv = document.createElement("div");
+        const messageDiv = document.createElement("div");
         messageDiv.classList.add("message", sender === "user" ? "user-message" : "ai-message");
 
-        let bubble = document.createElement("div");
+        const bubble = document.createElement("div");
         bubble.classList.add("bubble");
         bubble.dataset.raw = text;
 
@@ -203,28 +262,58 @@ document.addEventListener("DOMContentLoaded", function () {
         saveChatHistory();
     }
 
-    // Function to fetch AI-generated response
-    async function generateResponse(input, system) {
-        let typingMessage = document.createElement("div");
-        typingMessage.classList.add("message", "ai-message", "typing");
-        typingMessage.innerHTML = '<div class="bubble">AI is thinking...</div>';
-        chatBox.appendChild(typingMessage);
+    // Animated loading skeleton shown while awaiting a response.
+    function showSkeleton() {
+        const div = document.createElement("div");
+        div.classList.add("message", "ai-message", "typing");
+        div.innerHTML = '<div class="bubble"><div class="skeleton-line"></div><div class="skeleton-line short"></div></div>';
+        chatBox.appendChild(div);
         chatBox.scrollTop = chatBox.scrollHeight;
+        return div;
+    }
+
+    // Error bubble with a Retry button (not saved to history).
+    function showError(message) {
+        const div = document.createElement("div");
+        div.classList.add("message", "ai-message", "error-message");
+
+        const bubble = document.createElement("div");
+        bubble.classList.add("bubble", "error-bubble");
+
+        const span = document.createElement("span");
+        span.textContent = message;
+
+        const retry = document.createElement("button");
+        retry.className = "retry-btn";
+        retry.textContent = "Retry";
+        retry.addEventListener("click", function () {
+            div.remove();
+            if (lastRequest) generateResponse(lastRequest.input, lastRequest.system);
+        });
+
+        bubble.appendChild(span);
+        bubble.appendChild(retry);
+        div.appendChild(bubble);
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // Fetch an AI-generated response from the Vercel function.
+    async function generateResponse(input, system) {
+        lastRequest = { input: input, system: system };
+        const skeleton = showSkeleton();
 
         try {
             const response = await fetch(API_ENDPOINT, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ prompt: input, system: system || "" })
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(buildRequestBody(input, system))
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
+                throw new Error(`HTTP ${response.status}`);
             }
 
-            // Parse defensively — never fail silently.
             let data;
             try {
                 data = await response.json();
@@ -232,31 +321,27 @@ document.addEventListener("DOMContentLoaded", function () {
                 throw new Error("Could not parse AI response as JSON.");
             }
 
-            const aiResponse = data && typeof data.text === "string" ? data.text.trim() : "";
-            if (!aiResponse) {
-                throw new Error("Empty response from AI service.");
-            }
+            const aiResponse = parseChatResponse(data); // throws if empty/non-string
 
-            typingMessage.remove(); // Remove typing indicator
+            skeleton.remove();
             addMessage(aiResponse, "ai");
-
-            // Track token usage (real if the API returned it, else estimate).
-            const used = data.usage && Number.isFinite(data.usage.total_tokens)
-                ? data.usage.total_tokens
-                : estimateTokens(input) + estimateTokens(aiResponse);
-            addTokens(used);
+            addTokens(tokensFromResponse(data, input, aiResponse));
         } catch (error) {
             console.error("Error fetching response:", error);
-            typingMessage.remove();
-            addMessage("AI service is unavailable. Please check your API key.", "ai");
+            skeleton.remove();
+            const msg = error instanceof TypeError
+                ? "Couldn't reach the AI service. Check your internet connection and try again."
+                : "The AI service didn't respond properly. Please try again.";
+            showError(msg);
         }
     }
 
-    // Save chat history to local storage (raw text).
+    // Save chat history to local storage (raw text). Skeleton and error bubbles
+    // are transient and excluded.
     function saveChatHistory() {
-        let messages = [];
-        document.querySelectorAll(".message:not(.typing)").forEach(msg => {
-            let bubble = msg.querySelector(".bubble");
+        const messages = [];
+        document.querySelectorAll(".message:not(.typing):not(.error-message)").forEach(msg => {
+            const bubble = msg.querySelector(".bubble");
             messages.push({
                 text: bubble.dataset.raw != null ? bubble.dataset.raw : bubble.innerText,
                 sender: msg.classList.contains("user-message") ? "user" : "ai"
@@ -267,82 +352,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Load chat history from local storage
     function loadChatHistory() {
-        let savedMessages = JSON.parse(localStorage.getItem("chatHistory") || "[]");
+        const savedMessages = JSON.parse(localStorage.getItem("chatHistory") || "[]");
         savedMessages.forEach(msg => addMessage(msg.text, msg.sender));
-    }
-
-    // --- Minimal, XSS-safe Markdown renderer -------------------------------
-    // Supports: code blocks, inline code, bold, italic, headings, ordered and
-    // unordered lists, paragraphs. All input is HTML-escaped first, so only the
-    // tags we generate are ever inserted.
-    function escapeHtml(s) {
-        return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    }
-
-    function renderInline(s) {
-        return s
-            .replace(/`([^`]+)`/g, "<code>$1</code>")
-            .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-            .replace(/__([^_]+)__/g, "<strong>$1</strong>")
-            .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-            .replace(/(^|[\s(])_([^_]+)_/g, "$1<em>$2</em>");
-    }
-
-    function renderMarkdown(text) {
-        const lines = escapeHtml(text).split("\n");
-        let html = "";
-        let inCode = false;
-        let codeBuffer = [];
-        let listType = null;
-        let paraBuffer = [];
-
-        function flushPara() {
-            if (paraBuffer.length) {
-                html += `<p>${renderInline(paraBuffer.join(" "))}</p>`;
-                paraBuffer = [];
-            }
-        }
-        function closeList() {
-            if (listType) { html += `</${listType}>`; listType = null; }
-        }
-
-        for (let line of lines) {
-            if (line.trim().startsWith("```")) {
-                if (!inCode) {
-                    flushPara(); closeList();
-                    inCode = true; codeBuffer = [];
-                } else {
-                    html += `<pre><code>${codeBuffer.join("\n")}</code></pre>`;
-                    inCode = false;
-                }
-                continue;
-            }
-            if (inCode) { codeBuffer.push(line); continue; }
-
-            const ul = line.match(/^\s*[-*]\s+(.*)$/);
-            const ol = line.match(/^\s*\d+\.\s+(.*)$/);
-            const h = line.match(/^(#{1,3})\s+(.*)$/);
-
-            if (ul) {
-                flushPara();
-                if (listType !== "ul") { closeList(); html += "<ul>"; listType = "ul"; }
-                html += `<li>${renderInline(ul[1])}</li>`;
-            } else if (ol) {
-                flushPara();
-                if (listType !== "ol") { closeList(); html += "<ol>"; listType = "ol"; }
-                html += `<li>${renderInline(ol[1])}</li>`;
-            } else if (h) {
-                flushPara(); closeList();
-                html += `<h${h[1].length}>${renderInline(h[2])}</h${h[1].length}>`;
-            } else if (line.trim() === "") {
-                flushPara(); closeList();
-            } else {
-                closeList();
-                paraBuffer.push(line);
-            }
-        }
-        if (inCode) { html += `<pre><code>${codeBuffer.join("\n")}</code></pre>`; }
-        flushPara(); closeList();
-        return html;
     }
 });

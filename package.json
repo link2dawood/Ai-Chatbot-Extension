@@ -1,0 +1,15 @@
+{
+  "name": "ai-writing-assistant-extension",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Zero-setup AI writing assistant Chrome extension backed by a Vercel serverless proxy.",
+  "scripts": {
+    "test": "node --test",
+    "lint": "node --check api/chat.js && node --check src/lib/markdown.js && node --check src/lib/chat.js && node --check src/scripts/popup.js && node --check tests/markdown.test.js && node --check tests/chat.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

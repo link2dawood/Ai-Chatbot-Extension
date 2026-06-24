@@ -3,27 +3,13 @@
   "name": "AI Writing Assistant",
   "version": "1.0",
   "description": "Helps generate writing prompts and correct grammar.",
-  "permissions": ["activeTab", "scripting", "contextMenus"],
+  "permissions": ["activeTab", "scripting"],
   "host_permissions": ["https://*.vercel.app/*"],
-  "background": {
-    "service_worker": "src/scripts/background.js"
-  },
   "action": {
     "default_popup": "public/popup.html",
     "default_icon": "icon-16.png"
   },
-  "content_scripts": [
-    {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["src/scripts/content.js"]
-    }
-  ],
-  "commands": {
-    "paste_ai_text": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+V"
-      },
-      "description": "Paste AI-generated text into the active input field"
-    }
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }

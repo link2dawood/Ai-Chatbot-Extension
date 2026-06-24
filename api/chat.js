@@ -11,7 +11,7 @@
 // Optional:
 //   AI_MODEL             model id (default: "v0-mini")
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
     // CORS — allow the browser extension to call this endpoint.
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -74,4 +74,4 @@ module.exports = async (req, res) => {
         console.error("Proxy error:", err);
         return res.status(502).json({ error: "AI service unavailable" });
     }
-};
+}
