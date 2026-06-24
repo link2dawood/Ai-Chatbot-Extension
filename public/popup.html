@@ -17,6 +17,21 @@
 
         <h2 class="chat-title">AI Writing Assistant</h2>
 
+        <!-- Toolbar: conversation mode + history management -->
+        <div class="toolbar">
+            <select id="modeSelect" class="mode-select" title="Conversation mode">
+                <option value="chat">💬 Chat</option>
+                <option value="writing">✍️ Improve writing</option>
+                <option value="grammar">✅ Fix grammar</option>
+                <option value="summarize">📝 Summarize</option>
+                <option value="explain">💡 Explain</option>
+            </select>
+            <div class="toolbar-actions">
+                <button id="exportBtn" title="Export chat"><i class="fas fa-download"></i></button>
+                <button id="clearBtn" title="Clear chat"><i class="fas fa-trash"></i></button>
+            </div>
+        </div>
+
         <!-- Chat Box -->
         <div id="chatBox" class="chat-box"></div>
 
@@ -28,10 +43,11 @@
             <button id="injectBtn"><i class="fas fa-sign-in-alt"></i></button>
         </div>
 
-        <!-- Character counter + settings link -->
+        <!-- Character counter, token usage, settings link -->
         <div class="input-meta">
             <span id="charCounter" class="char-counter">0 / 2000</span>
-            <a href="#" id="openOptions" class="options-link" title="Settings"><i class="fas fa-gear"></i> Settings</a>
+            <span id="tokenCounter" class="token-counter" title="Approximate API tokens used this session">~0 tokens</span>
+            <a href="#" id="openOptions" class="options-link" title="Settings"><i class="fas fa-gear"></i></a>
         </div>
     </div>
 

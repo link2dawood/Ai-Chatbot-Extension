@@ -35,6 +35,15 @@ module.exports = async (req, res) => {
         return res.status(400).json({ error: "Missing 'prompt' in request body" });
     }
 
+    // Optional system instruction, set by the extension's conversation modes.
+    const system = req.body && typeof req.body.system === "string" ? req.body.system.trim() : "";
+
+    const messages = [];
+    if (system) {
+        messages.push({ role: "system", content: system });
+    }
+    messages.push({ role: "user", content: prompt });
+
     const model = process.env.AI_MODEL || "v0-mini";
 
     try {
@@ -44,10 +53,7 @@ module.exports = async (req, res) => {
                 "Authorization": `Bearer ${apiKey}`,
                 "Content-Type": "application/json"
             },
-            body: JSON.stringify({
-                model,
-                messages: [{ role: "user", content: prompt }]
-            })
+            body: JSON.stringify({ model, messages })
         });
 
         if (!upstream.ok) {
@@ -62,7 +68,8 @@ module.exports = async (req, res) => {
             return res.status(502).json({ error: "Empty response from AI provider" });
         }
 
-        return res.status(200).json({ text });
+        // Return token usage so the extension can show API consumption.
+        return res.status(200).json({ text, usage: data.usage || null });
     } catch (err) {
         console.error("Proxy error:", err);
         return res.status(502).json({ error: "AI service unavailable" });
