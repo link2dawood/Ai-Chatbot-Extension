@@ -7,17 +7,19 @@ document.addEventListener("DOMContentLoaded", function () {
     const themeToggle = document.getElementById("themeToggle");
     const charCounter = document.getElementById("charCounter");
     const tokenCounter = document.getElementById("tokenCounter");
-    const openOptions = document.getElementById("openOptions");
     const modeSelect = document.getElementById("modeSelect");
     const clearBtn = document.getElementById("clearBtn");
     const exportBtn = document.getElementById("exportBtn");
 
-    // Defaults — overridable from the options page (chrome.storage.sync).
-    // The AI provider key lives in a Vercel environment variable, never here.
-    const DEFAULT_ENDPOINT = "https://your-app.vercel.app/api/chat";
-    const DEFAULT_MAX_CHARS = 2000;
-
-    let settings = { endpoint: DEFAULT_ENDPOINT, maxChars: DEFAULT_MAX_CHARS };
+    // ---------------------------------------------------------------------
+    // Configuration — the extension works out of the box, no user setup.
+    // The AI provider key lives in a Vercel environment variable (server-side),
+    // so end users never need an API key of their own.
+    //
+    // Set this to your deployed Vercel function URL once, before publishing.
+    const API_ENDPOINT = "https://your-app.vercel.app/api/chat";
+    const MAX_CHARS = 2000;
+    // ---------------------------------------------------------------------
 
     // Conversation modes — each maps to a system instruction sent to the API.
     const MODES = {
@@ -31,38 +33,16 @@ document.addEventListener("DOMContentLoaded", function () {
     // Running token total for this session (persisted so it accumulates).
     let sessionTokens = parseInt(localStorage.getItem("tokenTotal") || "0", 10) || 0;
 
-    // Load saved settings, then render counters.
-    chrome.storage.sync.get(["endpoint", "maxChars"], function (res) {
-        if (res.endpoint) settings.endpoint = res.endpoint;
-        if (Number.isInteger(res.maxChars) && res.maxChars > 0) settings.maxChars = res.maxChars;
-        updateCharCounter();
-    });
-
-    // Pick up changes made on the options page while the popup is open.
-    chrome.storage.onChanged.addListener(function (changes, area) {
-        if (area !== "sync") return;
-        if (changes.endpoint) settings.endpoint = changes.endpoint.newValue || DEFAULT_ENDPOINT;
-        if (changes.maxChars) settings.maxChars = changes.maxChars.newValue || DEFAULT_MAX_CHARS;
-        updateCharCounter();
-    });
-
     // Restore selected mode.
     modeSelect.value = localStorage.getItem("mode") || "chat";
     modeSelect.addEventListener("change", function () {
         localStorage.setItem("mode", modeSelect.value);
     });
 
-    // Load previous chat messages + token total.
+    // Load previous chat messages, then render counters.
     loadChatHistory();
+    updateCharCounter();
     updateTokenCounter();
-
-    // Open the settings/options page.
-    if (openOptions) {
-        openOptions.addEventListener("click", function (e) {
-            e.preventDefault();
-            chrome.runtime.openOptionsPage();
-        });
-    }
 
     // Toggle Dark Mode (Save to Local Storage)
     themeToggle.addEventListener("click", function () {
@@ -84,9 +64,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function updateCharCounter() {
         const len = inputText.value.length;
-        const max = settings.maxChars;
-        charCounter.textContent = `${len} / ${max}`;
-        const over = len > max;
+        charCounter.textContent = `${len} / ${MAX_CHARS}`;
+        const over = len > MAX_CHARS;
         charCounter.classList.toggle("over", over);
         sendBtn.disabled = over || len === 0;
     }
@@ -113,8 +92,8 @@ document.addEventListener("DOMContentLoaded", function () {
         let userInput = inputText.value.trim();
         if (!userInput) return;
 
-        if (userInput.length > settings.maxChars) {
-            alert(`Your message is ${userInput.length} characters, but the limit is ${settings.maxChars}. Please shorten it.`);
+        if (userInput.length > MAX_CHARS) {
+            alert(`Your message is ${userInput.length} characters, but the limit is ${MAX_CHARS}. Please shorten it.`);
             return;
         }
 
@@ -233,7 +212,7 @@ document.addEventListener("DOMContentLoaded", function () {
         chatBox.scrollTop = chatBox.scrollHeight;
 
         try {
-            const response = await fetch(settings.endpoint, {
+            const response = await fetch(API_ENDPOINT, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"

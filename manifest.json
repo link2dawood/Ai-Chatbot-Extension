@@ -3,7 +3,7 @@
   "name": "AI Writing Assistant",
   "version": "1.0",
   "description": "Helps generate writing prompts and correct grammar.",
-  "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
+  "permissions": ["activeTab", "scripting", "contextMenus"],
   "host_permissions": ["https://*.vercel.app/*"],
   "background": {
     "service_worker": "src/scripts/background.js"
@@ -12,7 +12,6 @@
     "default_popup": "public/popup.html",
     "default_icon": "icon-16.png"
   },
-  "options_page": "public/options.html",
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
