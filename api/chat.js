@@ -1,15 +1,20 @@
 // Vercel Serverless Function — POST /api/chat
 //
-// The browser extension sends { prompt }. This function forwards it to the
-// Vercel AI Gateway using an API key read from an environment variable, then
-// returns { text }. The key never leaves the server, so it is never exposed
-// in the extension bundle.
+// The browser extension sends { prompt, system }. This function forwards it to
+// the v0 Model API (OpenAI-compatible chat completions) using an API key read
+// from an environment variable, then returns { text, usage }. The key never
+// leaves the server, so it is never exposed in the extension bundle.
 //
 // Required environment variable (set in Vercel → Project → Settings →
 // Environment Variables, or `vercel env add`):
-//   AI_GATEWAY_API_KEY   your Vercel AI Gateway key
+//   V0_API_KEY   your v0 API key (from v0.app → Settings → API Keys)
 // Optional:
-//   AI_MODEL             model id (default: "v0-mini")
+//   AI_MODEL     model id (default: "v0-1.5-md"; also "v0-1.5-lg")
+//
+// Note: the v0 API requires a Premium or Team plan with usage-based billing
+// enabled. Without it, v0 returns 404 for every request.
+
+const V0_API_URL = "https://api.v0.dev/v1/chat/completions";
 
 export default async function handler(req, res) {
     // CORS — allow the browser extension to call this endpoint.
@@ -24,9 +29,9 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: "Method not allowed" });
     }
 
-    const apiKey = process.env.AI_GATEWAY_API_KEY;
+    const apiKey = process.env.V0_API_KEY;
     if (!apiKey) {
-        console.error("Missing AI_GATEWAY_API_KEY environment variable");
+        console.error("Missing V0_API_KEY environment variable");
         return res.status(500).json({ error: "Server is not configured with an API key" });
     }
 
@@ -44,10 +49,10 @@ export default async function handler(req, res) {
     }
     messages.push({ role: "user", content: prompt });
 
-    const model = process.env.AI_MODEL || "v0-mini";
+    const model = process.env.AI_MODEL || "v0-1.5-md";
 
     try {
-        const upstream = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+        const upstream = await fetch(V0_API_URL, {
             method: "POST",
             headers: {
                 "Authorization": `Bearer ${apiKey}`,
@@ -58,7 +63,7 @@ export default async function handler(req, res) {
 
         if (!upstream.ok) {
             const detail = await upstream.text();
-            console.error("AI Gateway error:", upstream.status, detail);
+            console.error("v0 API error:", upstream.status, detail);
             return res.status(502).json({ error: "AI provider returned an error" });
         }
 

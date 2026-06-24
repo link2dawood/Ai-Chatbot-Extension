@@ -11,9 +11,10 @@ The popup couldn't get a valid reply from the backend. Work through these in ord
 |-------|-------|-----|
 | Endpoint not set | `API_ENDPOINT` in `src/scripts/popup.js` is still `https://your-app.vercel.app/api/chat` | Set it to your real deployed URL, then reload the extension |
 | Function not deployed | Visit `<your-url>/api/chat` in the browser | Run `vercel --prod` |
-| Missing env var | Function returns "Server is not configured with an API key" | `vercel env add AI_GATEWAY_API_KEY production`, then redeploy |
-| Bad/expired key | Function logs show a 401/403 from the gateway | Rotate the key and update the env var |
-| Wrong model id | Gateway returns an error about the model | Set `AI_MODEL` to a valid id (default `v0-mini`) |
+| Missing env var | Function returns "Server is not configured with an API key" | `vercel env add V0_API_KEY production`, then redeploy |
+| **v0 API not enabled** | v0 returns **404 for every request** — a valid key and an invalid key get the identical 404 | Enable **usage-based billing on a Premium/Team plan** in v0 → Billing. The v0 API is gated behind this. |
+| Bad/expired key | Function logs show a 401/403 from v0 | Rotate the key (v0.app → Settings → API Keys) and update the env var |
+| Wrong model id | v0 returns an error about the model | Set `AI_MODEL` to a valid id (`v0-1.5-md` or `v0-1.5-lg`) |
 | No internet | Other sites fail too | Reconnect and click **Retry** |
 
 The **Retry** button in the error bubble re-sends the last message once you've fixed the cause.

@@ -6,7 +6,8 @@ nothing to configure. The extension talks to a small [Vercel](https://vercel.com
 serverless function that holds the API key in an environment variable, so the key is
 never shipped inside the extension.
 
-> Backend: the function proxies to the **Vercel AI Gateway** (default model `v0-mini`).
+> Backend: the function proxies to the **v0 Model API** (default model `v0-1.5-md`).
+> The v0 API requires a **Premium/Team plan with usage-based billing enabled**.
 
 ## ✨ Features
 
@@ -26,7 +27,7 @@ never shipped inside the extension.
 Toolbar popup (public/popup.html + src/scripts/popup.js)
         │  POST { prompt, system }
         ▼
-Vercel function (api/chat.js)  ──uses AI_GATEWAY_API_KEY (env var)──►  Vercel AI Gateway
+Vercel function (api/chat.js)  ──uses V0_API_KEY (env var)──►  v0 Model API
         ▲
         │  { text, usage }
         ◄
@@ -76,8 +77,8 @@ The extension calls a Vercel function you deploy. Users do **not** do this.
    ```
 2. Add the API key as an environment variable (never commit it):
    ```bash
-   vercel env add AI_GATEWAY_API_KEY production
-   vercel env add AI_MODEL production   # optional, defaults to v0-mini
+   vercel env add V0_API_KEY production
+   vercel env add AI_MODEL production   # optional, defaults to v0-1.5-md
    ```
 3. Put your deployed URL into [`src/scripts/popup.js`](src/scripts/popup.js) — replace the
    `API_ENDPOINT` value `https://your-app.vercel.app/api/chat` with your real URL.

@@ -10,8 +10,8 @@ Two pieces live in one repo:
 2. **The backend** (deployed to Vercel) — `api/chat.js`.
 
 The popup never holds an API key. It POSTs `{ prompt, system }` to the Vercel function,
-which adds the key from `process.env.AI_GATEWAY_API_KEY` and proxies to the Vercel AI
-Gateway, returning `{ text, usage }`.
+which adds the key from `process.env.V0_API_KEY` and proxies to the v0 Model API
+(`https://api.v0.dev/v1/chat/completions`), returning `{ text, usage }`.
 
 ## Project structure
 
@@ -45,7 +45,7 @@ DevTools for the popup: right-click the popup → **Inspect**.
 ### Run the backend locally (optional)
 
 ```bash
-# .env already holds AI_GATEWAY_API_KEY and AI_MODEL (git-ignored)
+# .env already holds V0_API_KEY and AI_MODEL (git-ignored)
 vercel dev
 ```
 
@@ -57,8 +57,8 @@ URL before publishing.
 
 ```bash
 vercel --prod
-vercel env add AI_GATEWAY_API_KEY production
-vercel env add AI_MODEL production        # optional; default is "v0-mini"
+vercel env add V0_API_KEY production
+vercel env add AI_MODEL production        # optional; default is "v0-1.5-md"
 ```
 
 `.env` is for local development only — Vercel does **not** read it in production. Set
@@ -92,7 +92,7 @@ Icons are inline SVG in `public/popup.html` (and the moon/sun strings in
 and dark-mode styling. Do **not** add a remote icon font — it would violate the CSP.
 
 ### Change the model
-Set the `AI_MODEL` env var (no code change). Default is `v0-mini`.
+Set the `AI_MODEL` env var (no code change). Default is `v0-1.5-md`; `v0-1.5-lg` is also valid.
 
 ## Conventions
 
