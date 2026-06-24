@@ -9,7 +9,7 @@
 // Environment Variables, or `vercel env add`):
 //   AI_GATEWAY_API_KEY   your Vercel AI Gateway key
 // Optional:
-//   AI_MODEL             model id (default: "openai/gpt-4o-mini")
+//   AI_MODEL             model id (default: "v0-mini")
 
 module.exports = async (req, res) => {
     // CORS — allow the browser extension to call this endpoint.
@@ -35,7 +35,7 @@ module.exports = async (req, res) => {
         return res.status(400).json({ error: "Missing 'prompt' in request body" });
     }
 
-    const model = process.env.AI_MODEL || "openai/gpt-4o-mini";
+    const model = process.env.AI_MODEL || "v0-mini";
 
     try {
         const upstream = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
