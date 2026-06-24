@@ -4,7 +4,7 @@
   "version": "1.0",
   "description": "Helps generate writing prompts and correct grammar.",
   "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
-  "host_permissions": ["https://generativelanguage.googleapis.com/*"],
+  "host_permissions": ["https://*.vercel.app/*"],
   "background": {
     "service_worker": "background.js"
   },

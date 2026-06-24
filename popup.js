@@ -9,9 +9,9 @@ document.addEventListener("DOMContentLoaded", function () {
     // Load previous chat messages from local storage
     loadChatHistory();
 
-    // API Key & URL
-    const API_KEY = "AIzaSyBb1X84RkeJRbrYMptHocPEB8PxPg2gltc"; 
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+    // Vercel endpoint — your deployed serverless function (see api/chat.js).
+    // The AI provider key lives in a Vercel environment variable, never in this file.
+    const API_ENDPOINT = "https://your-app.vercel.app/api/chat";
 
     // Toggle Dark Mode (Save to Local Storage)
     themeToggle.addEventListener("click", function () {
@@ -108,12 +108,12 @@ document.addEventListener("DOMContentLoaded", function () {
         chatBox.scrollTop = chatBox.scrollHeight;
 
         try {
-            const response = await fetch(API_URL, {
+            const response = await fetch(API_ENDPOINT, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify({ contents: [{ parts: [{ text: input }] }] })
+                body: JSON.stringify({ prompt: input })
             });
 
             if (!response.ok) {
@@ -121,14 +121,18 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             const data = await response.json();
-            const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || "AI couldn't generate a response.";
+            const aiResponse = data.text;
+
+            if (!aiResponse) {
+                throw new Error("Empty response from AI service.");
+            }
 
             typingMessage.remove(); // Remove typing indicator
             addMessage(aiResponse, "ai");
         } catch (error) {
             console.error("Error fetching response:", error);
             typingMessage.remove();
-            addMessage("Error generating response. Please try again.", "ai");
+            addMessage("AI service is unavailable. Please check your API key.", "ai");
         }
     }
 
