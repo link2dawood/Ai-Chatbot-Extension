@@ -6,16 +6,17 @@
   "permissions": ["activeTab", "scripting", "storage", "contextMenus"],
   "host_permissions": ["https://*.vercel.app/*"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/scripts/background.js"
   },
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "public/popup.html",
     "default_icon": "icon-16.png"
   },
+  "options_page": "public/options.html",
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"]
+      "js": ["src/scripts/content.js"]
     }
   ],
   "commands": {

@@ -128,6 +128,42 @@ button:hover i {
     color: #0056b3;
 }
 
+button:disabled {
+    cursor: not-allowed;
+}
+
+button:disabled i {
+    color: #bbb;
+}
+
+/* Input meta row: character counter + settings link */
+.input-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 6px;
+    font-size: 12px;
+    color: #888;
+}
+
+.char-counter {
+    font-variant-numeric: tabular-nums;
+}
+
+.char-counter.over {
+    color: #d32f2f;
+    font-weight: bold;
+}
+
+.options-link {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.options-link:hover {
+    text-decoration: underline;
+}
+
 /* Dark Mode */
 .dark-mode {
     background-color: #1e1e1e;
@@ -150,4 +186,8 @@ button:hover i {
 .dark-mode .bubble {
     background: #555;
     color: white;
+}
+
+.dark-mode .input-meta {
+    color: #aaa;
 }

@@ -5,13 +5,41 @@ document.addEventListener("DOMContentLoaded", function () {
     const copyBtn = document.getElementById("copyBtn");
     const injectBtn = document.getElementById("injectBtn");
     const themeToggle = document.getElementById("themeToggle");
+    const charCounter = document.getElementById("charCounter");
+    const openOptions = document.getElementById("openOptions");
+
+    // Defaults — overridable from the options page (chrome.storage.sync).
+    // The AI provider key lives in a Vercel environment variable, never here.
+    const DEFAULT_ENDPOINT = "https://your-app.vercel.app/api/chat";
+    const DEFAULT_MAX_CHARS = 2000;
+
+    let settings = { endpoint: DEFAULT_ENDPOINT, maxChars: DEFAULT_MAX_CHARS };
+
+    // Load saved settings, then render the counter.
+    chrome.storage.sync.get(["endpoint", "maxChars"], function (res) {
+        if (res.endpoint) settings.endpoint = res.endpoint;
+        if (Number.isInteger(res.maxChars) && res.maxChars > 0) settings.maxChars = res.maxChars;
+        updateCharCounter();
+    });
+
+    // Pick up changes made on the options page while the popup is open.
+    chrome.storage.onChanged.addListener(function (changes, area) {
+        if (area !== "sync") return;
+        if (changes.endpoint) settings.endpoint = changes.endpoint.newValue || DEFAULT_ENDPOINT;
+        if (changes.maxChars) settings.maxChars = changes.maxChars.newValue || DEFAULT_MAX_CHARS;
+        updateCharCounter();
+    });
 
     // Load previous chat messages from local storage
     loadChatHistory();
 
-    // Vercel endpoint — your deployed serverless function (see api/chat.js).
-    // The AI provider key lives in a Vercel environment variable, never in this file.
-    const API_ENDPOINT = "https://your-app.vercel.app/api/chat";
+    // Open the settings/options page
+    if (openOptions) {
+        openOptions.addEventListener("click", function (e) {
+            e.preventDefault();
+            chrome.runtime.openOptionsPage();
+        });
+    }
 
     // Toggle Dark Mode (Save to Local Storage)
     themeToggle.addEventListener("click", function () {
@@ -28,13 +56,32 @@ document.addEventListener("DOMContentLoaded", function () {
         document.body.classList.add("dark-mode");
     }
 
+    // Live character counter + limit enforcement
+    inputText.addEventListener("input", updateCharCounter);
+
+    function updateCharCounter() {
+        const len = inputText.value.length;
+        const max = settings.maxChars;
+        charCounter.textContent = `${len} / ${max}`;
+        const over = len > max;
+        charCounter.classList.toggle("over", over);
+        // Disable send when empty or over the limit.
+        sendBtn.disabled = over || len === 0;
+    }
+
     // Send message
     sendBtn.addEventListener("click", function () {
         let userInput = inputText.value.trim();
         if (!userInput) return;
 
+        if (userInput.length > settings.maxChars) {
+            alert(`Your message is ${userInput.length} characters, but the limit is ${settings.maxChars}. Please shorten it.`);
+            return;
+        }
+
         addMessage(userInput, "user");
         inputText.value = "";
+        updateCharCounter();
 
         generateResponse(userInput);
     });
@@ -108,7 +155,7 @@ document.addEventListener("DOMContentLoaded", function () {
         chatBox.scrollTop = chatBox.scrollHeight;
 
         try {
-            const response = await fetch(API_ENDPOINT, {
+            const response = await fetch(settings.endpoint, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -120,9 +167,15 @@ document.addEventListener("DOMContentLoaded", function () {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
 
-            const data = await response.json();
-            const aiResponse = data.text;
+            // Parse defensively — never fail silently.
+            let data;
+            try {
+                data = await response.json();
+            } catch (parseErr) {
+                throw new Error("Could not parse AI response as JSON.");
+            }
 
+            const aiResponse = data && typeof data.text === "string" ? data.text.trim() : "";
             if (!aiResponse) {
                 throw new Error("Empty response from AI service.");
             }
