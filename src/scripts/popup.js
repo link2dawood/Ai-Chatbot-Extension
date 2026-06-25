@@ -27,7 +27,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // so end users never need an API key of their own.
     //
     // Set this to your deployed Vercel function URL once, before publishing.
-    const API_ENDPOINT = "https://your-app.vercel.app/api/chat";
+    const API_ENDPOINT = "https://ai-chatbot-extension.vercel.app/api/chat";
     const MAX_CHARS = 2000;
     // ---------------------------------------------------------------------
 
