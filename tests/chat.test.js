@@ -7,7 +7,9 @@ import {
     estimateTokens,
     tokensFromResponse,
     isRateLimited,
-    summarizeRateLimit
+    summarizeRateLimit,
+    quotaStatus,
+    formatReset
 } from "../src/lib/chat.js";
 
 test("buildRequestBody includes prompt and system", () => {
@@ -75,4 +77,37 @@ test("summarizeRateLimit normalizes the payload", () => {
         reset: 222
     });
     assert.equal(summarizeRateLimit(null), null);
+});
+
+test("quotaStatus prefers the daily allowance and sets the level", () => {
+    const s = quotaStatus({ dailyLimit: 7, dailyRemaining: 7, limit: 150, remaining: 150 });
+    assert.equal(s.scope, "daily");
+    assert.equal(s.used, 0);
+    assert.equal(s.total, 7);
+    assert.equal(s.percent, 0);
+    assert.equal(s.level, "green");
+    assert.equal(s.exhausted, false);
+});
+
+test("quotaStatus level thresholds: yellow >=50%, red >=80%, exhausted at 0", () => {
+    assert.equal(quotaStatus({ dailyLimit: 10, dailyRemaining: 5 }).level, "yellow"); // 50%
+    assert.equal(quotaStatus({ dailyLimit: 10, dailyRemaining: 2 }).level, "red");    // 80%
+    const done = quotaStatus({ dailyLimit: 7, dailyRemaining: 0 });
+    assert.equal(done.percent, 100);
+    assert.equal(done.exhausted, true);
+});
+
+test("quotaStatus falls back to overall, then unknown", () => {
+    assert.equal(quotaStatus({ limit: 150, remaining: 75 }).scope, "overall");
+    assert.equal(quotaStatus(null).level, "unknown");
+    assert.equal(quotaStatus({}).level, "unknown");
+});
+
+test("formatReset renders a human countdown", () => {
+    const now = 1_000_000_000_000;
+    assert.equal(formatReset(now + 30 * 60000, now), "resets in 30m");
+    assert.equal(formatReset(now + 6 * 3600000, now), "resets in 6h");
+    assert.equal(formatReset(now + (2 * 3600000 + 15 * 60000), now), "resets in 2h 15m");
+    assert.equal(formatReset(now - 1, now), "resetting…");
+    assert.equal(formatReset(undefined, now), "");
 });

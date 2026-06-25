@@ -16,9 +16,11 @@ never shipped inside the extension.
 - **Markdown rendering** — replies render bold, italic, code blocks, headings, and lists
   (via a small, XSS-safe renderer — no remote scripts).
 - **Token counter** — shows approximate API tokens used this session.
-- **Rate-limit aware** — the backend checks v0's `/v1/rate-limits` before each call and
-  returns a clear "rate limit reached" message instead of failing; sends are debounced
-  while a reply is in flight.
+- **Quota display & limits** — a header progress bar shows your real v0 allowance
+  (`used/total today` + reset timer, green→yellow→red). The backend checks
+  `/v1/rate-limits` before each call; when exhausted, sends are blocked with a "daily
+  limit reached" modal (chat history kept). Sends are also debounced while a reply is in
+  flight.
 - **Plain-text replies** — a server-side system prompt keeps v0's UI-oriented models
   answering in prose, not code/components.
 - **History management** — conversations persist locally; Clear and Export (Text / Markdown / PDF).

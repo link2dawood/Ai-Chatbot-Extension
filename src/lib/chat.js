@@ -64,3 +64,44 @@ export function summarizeRateLimit(rate) {
         reset: daily.reset != null ? daily.reset : (rate.reset != null ? rate.reset : null)
     };
 }
+
+// --- Quota display (derived from a summarizeRateLimit() object) --------------
+// Returns a UI-friendly status. Prefers the daily allowance, falls back to the
+// overall one. `level` drives the green/yellow/red indicator.
+export function quotaStatus(summary) {
+    const unknown = {
+        level: "unknown", scope: null,
+        used: null, total: null, remaining: null, percent: null, exhausted: false
+    };
+    if (!summary || typeof summary !== "object") return unknown;
+
+    let total, remaining, scope;
+    if (Number.isFinite(summary.dailyLimit) && Number.isFinite(summary.dailyRemaining)) {
+        total = summary.dailyLimit; remaining = summary.dailyRemaining; scope = "daily";
+    } else if (Number.isFinite(summary.limit) && Number.isFinite(summary.remaining)) {
+        total = summary.limit; remaining = summary.remaining; scope = "overall";
+    } else {
+        return unknown;
+    }
+
+    const used = Math.max(0, total - remaining);
+    const percent = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+    let level = "green";
+    if (percent >= 80) level = "red";
+    else if (percent >= 50) level = "yellow";
+
+    return { level, scope, used, total, remaining, percent, exhausted: remaining <= 0 };
+}
+
+// Human-friendly countdown to a reset timestamp (ms epoch). `nowMs` is passed
+// in so the function stays pure and testable.
+export function formatReset(resetMs, nowMs) {
+    if (!Number.isFinite(resetMs)) return "";
+    const diff = resetMs - nowMs;
+    if (diff <= 0) return "resetting…";
+    const mins = Math.round(diff / 60000);
+    if (mins < 60) return `resets in ${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    const rem = mins % 60;
+    return rem > 0 ? `resets in ${hrs}h ${rem}m` : `resets in ${hrs}h`;
+}

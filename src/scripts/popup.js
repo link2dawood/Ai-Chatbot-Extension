@@ -1,5 +1,5 @@
 import { renderMarkdown, escapeHtml } from "../lib/markdown.js";
-import { MODES, buildRequestBody, parseChatResponse, tokensFromResponse } from "../lib/chat.js";
+import { MODES, buildRequestBody, parseChatResponse, tokensFromResponse, quotaStatus, formatReset } from "../lib/chat.js";
 
 document.addEventListener("DOMContentLoaded", function () {
     const chatBox = document.getElementById("chatBox");
@@ -14,6 +14,12 @@ document.addEventListener("DOMContentLoaded", function () {
     const clearBtn = document.getElementById("clearBtn");
     const exportBtn = document.getElementById("exportBtn");
     const exportMenu = document.getElementById("exportMenu");
+    const quotaBar = document.getElementById("quotaBar");
+    const quotaFill = document.getElementById("quotaFill");
+    const quotaText = document.getElementById("quotaText");
+    const quotaModal = document.getElementById("quotaModal");
+    const quotaModalText = document.getElementById("quotaModalText");
+    const quotaModalClose = document.getElementById("quotaModalClose");
 
     // ---------------------------------------------------------------------
     // Configuration — the extension works out of the box, no user setup.
@@ -37,6 +43,9 @@ document.addEventListener("DOMContentLoaded", function () {
     // Guards against sending another request while one is in flight.
     let isLoading = false;
 
+    // Latest known v0 quota (summarized rateLimit) — drives the bar + enforcement.
+    let currentQuota = null;
+
     // Restore selected mode.
     modeSelect.value = localStorage.getItem("mode") || "chat";
     modeSelect.addEventListener("change", function () {
@@ -47,6 +56,17 @@ document.addEventListener("DOMContentLoaded", function () {
     loadChatHistory();
     updateCharCounter();
     updateTokenCounter();
+
+    // Quota: show cached value immediately, then refresh from the server.
+    try {
+        const cachedQuota = JSON.parse(localStorage.getItem("quota") || "null");
+        if (cachedQuota) { currentQuota = cachedQuota; renderQuota(); }
+    } catch (e) { /* ignore */ }
+    fetchQuota();
+
+    quotaModalClose.addEventListener("click", function () {
+        quotaModal.classList.add("hidden");
+    });
 
     // Dark mode (persisted) — swaps the moon/sun SVG.
     if (localStorage.getItem("darkMode") === "true") {
@@ -95,12 +115,61 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    // --- Quota (v0 real rate limit) ---------------------------------------
+    function setQuota(summary) {
+        currentQuota = summary || null;
+        if (currentQuota) {
+            localStorage.setItem("quota", JSON.stringify(currentQuota));
+        }
+        renderQuota();
+    }
+
+    function renderQuota() {
+        const status = quotaStatus(currentQuota);
+        if (status.level === "unknown") {
+            quotaBar.classList.add("hidden");
+            return;
+        }
+        quotaBar.classList.remove("hidden");
+        quotaFill.style.width = `${status.percent}%`;
+        quotaFill.classList.remove("green", "yellow", "red");
+        quotaFill.classList.add(status.level);
+        const reset = currentQuota && currentQuota.reset ? formatReset(currentQuota.reset, Date.now()) : "";
+        quotaText.textContent = `${status.used}/${status.total} today${reset ? " · " + reset : ""}`;
+    }
+
+    async function fetchQuota() {
+        // Best-effort: a GET returns only the current rate-limit/quota status.
+        try {
+            const res = await fetch(API_ENDPOINT, { method: "GET" });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data && data.rateLimit) setQuota(data.rateLimit);
+        } catch (e) {
+            /* quota display is non-critical */
+        }
+    }
+
+    function showQuotaModal() {
+        const reset = currentQuota && currentQuota.reset ? formatReset(currentQuota.reset, Date.now()) : "";
+        quotaModalText.textContent = reset
+            ? `You've used your daily request limit. It ${reset}.`
+            : "You've used your daily request limit. Please try again later.";
+        quotaModal.classList.remove("hidden");
+    }
+
     // Shared by the send button and the Enter key.
     function sendMessage() {
         if (isLoading) return;
 
         const userInput = inputText.value.trim();
         if (!userInput) return;
+
+        // Block when the v0 daily allowance is exhausted.
+        if (quotaStatus(currentQuota).exhausted) {
+            showQuotaModal();
+            return;
+        }
 
         if (userInput.length > MAX_CHARS) {
             alert(`Your message is ${userInput.length} characters, but the limit is ${MAX_CHARS}. Please shorten it.`);
@@ -317,12 +386,17 @@ document.addEventListener("DOMContentLoaded", function () {
                 body: JSON.stringify(buildRequestBody(input, system))
             });
 
-            // Rate limited — show the server's message (and reset time if given).
+            // Rate limited — update the quota and show the exceeded modal.
             if (response.status === 429) {
                 let body = {};
                 try { body = await response.json(); } catch (e) { /* ignore */ }
                 skeleton.remove();
-                showError(body.error || "Rate limit reached. Please try again later.");
+                if (body.rateLimit) setQuota(body.rateLimit);
+                if (quotaStatus(currentQuota).exhausted) {
+                    showQuotaModal();
+                } else {
+                    showError(body.error || "Rate limit reached. Please try again later.");
+                }
                 return;
             }
 
@@ -342,6 +416,7 @@ document.addEventListener("DOMContentLoaded", function () {
             skeleton.remove();
             addMessage(aiResponse, "ai");
             addTokens(tokensFromResponse(data, input, aiResponse));
+            if (data.rateLimit) setQuota(data.rateLimit);
         } catch (error) {
             console.error("Error fetching response:", error);
             skeleton.remove();
