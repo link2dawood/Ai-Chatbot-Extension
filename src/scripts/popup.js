@@ -372,6 +372,23 @@ document.addEventListener("DOMContentLoaded", function () {
         chatBox.scrollTop = chatBox.scrollHeight;
     }
 
+    // Map a non-OK HTTP status to an actionable message.
+    function httpErrorMessage(status, serverError) {
+        if (status === 404) {
+            return "AI endpoint not found (404). Set API_ENDPOINT in popup.js to your deployed Vercel URL.";
+        }
+        if (status === 401 || status === 403) {
+            return "Not authorized by the AI provider — check the V0_API_KEY on your server.";
+        }
+        if (status === 500) {
+            return serverError || "Server isn't configured (missing V0_API_KEY).";
+        }
+        if (status === 502) {
+            return "The AI provider rejected the request. If you use v0, enable usage-based billing.";
+        }
+        return serverError ? `${serverError} (HTTP ${status})` : `The AI service returned an error (HTTP ${status}).`;
+    }
+
     // Fetch an AI-generated response from the Vercel function.
     async function generateResponse(input, system) {
         lastRequest = { input: input, system: system };
@@ -401,7 +418,13 @@ document.addEventListener("DOMContentLoaded", function () {
             }
 
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
+                // Read the function's JSON error (if any) for a specific reason.
+                let serverError = "";
+                try {
+                    const body = await response.json();
+                    if (body && body.error) serverError = body.error;
+                } catch (e) { /* non-JSON error page */ }
+                throw new Error(httpErrorMessage(response.status, serverError));
             }
 
             let data;
@@ -421,8 +444,8 @@ document.addEventListener("DOMContentLoaded", function () {
             console.error("Error fetching response:", error);
             skeleton.remove();
             const msg = error instanceof TypeError
-                ? "Couldn't reach the AI service. Check your internet connection and try again."
-                : "The AI service didn't respond properly. Please try again.";
+                ? "Couldn't reach the AI service. Check the endpoint URL / your connection."
+                : (error.message || "The AI service didn't respond properly. Please try again.");
             showError(msg);
         } finally {
             isLoading = false;
