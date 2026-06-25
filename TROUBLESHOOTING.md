@@ -1,7 +1,7 @@
 # Troubleshooting
 
-Common problems and how to fix them. Open the popup's DevTools (right-click the popup →
-**Inspect**) and check the Console — most issues show a clear error there.
+Common problems and how to fix them. Open the side panel's DevTools (right-click inside the
+side panel → **Inspect**) and check the Console — most issues show a clear error there.
 
 ## "AI service is unavailable" / "Couldn't reach the AI service"
 
@@ -60,12 +60,11 @@ you likely edited an SVG and broke its markup — re-check the `<svg>` in
 
 ## Export → PDF doesn't open the print dialog
 
-PDF export opens a printable page and calls `print()`. This is best-effort: if the popup
-closes (loses focus) before the new tab finishes loading, the print dialog may not appear
-automatically.
+PDF export opens a printable page in a new tab and calls `print()`. This is best-effort and
+may not trigger the dialog automatically in every case.
 
 - The printable page still opens — just press **Ctrl/Cmd + P** and choose **Save as PDF**.
-- A popup blocker can also stop the new tab; allow popups for the extension.
+- A popup blocker can stop the new tab; allow popups for the extension.
 - Text (.txt) and Markdown (.md) exports download directly and are fully reliable.
 
 ## Insert ("Insert into page field") does nothing

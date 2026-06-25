@@ -6,7 +6,7 @@
   "description": "Zero-setup AI writing assistant Chrome extension backed by a Vercel serverless proxy.",
   "scripts": {
     "test": "node --test",
-    "lint": "node --check api/chat.js && node --check src/lib/markdown.js && node --check src/lib/chat.js && node --check src/scripts/popup.js && node --check tests/markdown.test.js && node --check tests/chat.test.js"
+    "lint": "node --check api/chat.js && node --check src/scripts/background.js && node --check src/lib/markdown.js && node --check src/lib/chat.js && node --check src/scripts/popup.js && node --check tests/markdown.test.js && node --check tests/chat.test.js"
   },
   "engines": {
     "node": ">=18"

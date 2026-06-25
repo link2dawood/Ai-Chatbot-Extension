@@ -11,7 +11,9 @@ never shipped inside the extension.
 
 ## ✨ Features
 
-- **One-click chat** from the toolbar popup — type and get answers without leaving the page.
+- **Side panel UI** — clicking the toolbar icon opens a docked side panel that **stays open
+  until you close it** (unlike a popup, it survives clicking the page / switching tabs).
+- **One-click chat** — type and get answers without leaving the page.
 - **Conversation modes** — Chat, Improve writing, Fix grammar, Summarize, Explain.
 - **Markdown rendering** — replies render bold, italic, code blocks, headings, and lists
   (via a small, XSS-safe renderer — no remote scripts).
@@ -31,7 +33,7 @@ never shipped inside the extension.
 ## 🧱 Architecture
 
 ```
-Toolbar popup (public/popup.html + src/scripts/popup.js)
+Side panel (public/popup.html + src/scripts/popup.js)
         │  POST { prompt, system }
         ▼
 Vercel function (api/chat.js)  ──uses V0_API_KEY (env var)──►  v0 Model API
@@ -46,15 +48,16 @@ and chat immediately — they never see or supply a key.
 ## 📁 Project structure
 
 ```
-manifest.json            MV3 manifest (loads from the repo root)
+manifest.json            MV3 manifest (loads from the repo root; side_panel + background)
 icon-16.png              Toolbar icon
 public/
-  popup.html             Popup UI
+  popup.html             Side panel UI
 src/
-  scripts/popup.js       Popup logic (ES module)
+  scripts/popup.js       UI logic (ES module)
+  scripts/background.js  Service worker — opens the side panel on icon click
   lib/markdown.js        XSS-safe Markdown renderer (tested)
   lib/chat.js            Request/response helpers + modes (tested)
-  styles/popup.css       Popup styles
+  styles/popup.css       UI styles
 api/
   chat.js                Vercel serverless proxy (holds the key server-side)
 tests/                   node:test unit tests
@@ -70,7 +73,8 @@ tests/                   node:test unit tests
    ```
 2. Open `chrome://extensions/` and enable **Developer mode** (top right).
 3. Click **Load unpacked** and select the repository root.
-4. Pin the extension and click its icon to start chatting.
+4. Pin the extension and click its icon — the chat opens in the **side panel** and stays
+   open until you close it.
 
 > The extension only works once the backend is deployed and its URL is set — see below.
 

@@ -1,25 +1,27 @@
-/* General styles */
+/* General styles — fills the side panel (variable size) */
+html,
+body {
+    height: 100%;
+}
+
 body {
     font-family: 'Poppins', sans-serif;
     background-color: #f0f0f0;
     margin: 0;
     padding: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 470px;
-    width: 350px;
+    min-width: 300px;
 }
 
-/* Chat container */
+/* Chat container — vertical layout that fills the panel height */
 .chat-container {
     background: #fff;
-    border-radius: 10px;
     width: 100%;
-    max-width: 350px;
+    min-height: 100vh;
+    box-sizing: border-box;
     padding: 15px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     position: relative;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Theme Toggle Button */
@@ -106,9 +108,10 @@ body {
     background: #f0f0f0;
 }
 
-/* Chat Box */
+/* Chat Box — grows to fill the available vertical space */
 .chat-box {
-    height: 250px;
+    flex: 1 1 auto;
+    min-height: 120px;
     overflow-y: auto;
     padding: 10px;
     border: 1px solid #ddd;
@@ -413,14 +416,13 @@ button:disabled {
 
 /* Exceeded modal */
 .modal-overlay {
-    position: absolute;
+    position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 50;
-    border-radius: 10px;
 }
 
 .modal {

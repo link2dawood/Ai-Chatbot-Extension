@@ -40,7 +40,9 @@ imports those modules; `api/chat.js` is independent.
 2. **Load unpacked** → select the repo root.
 3. After editing files, click the **reload** icon on the extension card.
 
-DevTools for the popup: right-click the popup → **Inspect**.
+The UI opens in the **side panel** (clicking the toolbar icon). `src/scripts/background.js`
+sets `openPanelOnActionClick`, so there's no `default_popup`. DevTools: right-click inside
+the side panel → **Inspect**.
 
 ### Run the backend locally (optional)
 
