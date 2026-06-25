@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI Writing Assistant",
+  "name": "AI Writing Assistant: Grammar & Chatbot",
   "version": "1.0",
-  "description": "Helps generate writing prompts and correct grammar.",
+  "description": "AI chatbot & writing assistant for any website. Fix grammar, rewrite, summarize & improve your text right in the sidebar.",
   "permissions": ["activeTab", "scripting", "sidePanel"],
   "host_permissions": ["https://*.vercel.app/*"],
   "background": {
