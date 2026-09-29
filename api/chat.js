@@ -1,143 +1,133 @@
-// Vercel Serverless Function — /api/chat
-//
-// POST { prompt, system }  → proxies to the v0 Model API (OpenAI-compatible
-//                            chat completions); returns { text, usage, rateLimit }.
-// GET                      → returns { rateLimit } only (for the popup's quota bar
-//                            on open; no completion call).
-//
-// The API key is read from an environment variable and never leaves the server.
-//
-// Required environment variable (set in Vercel → Project → Settings →
-// Environment Variables, or `vercel env add`):
-//   V0_API_KEY   your v0 API key (from v0.app → Settings → API Keys)
-// Optional:
-//   AI_MODEL     model id (default: "v0-1.5-md"; also "v0-1.5-lg")
-//
-// Note: the v0 API requires a Premium/Team plan with usage-based billing
-// enabled. Without it, v0 returns 404 for the completions endpoint.
+const OPENAI_URL = "https://api.openai.com/v1/responses";
+const OPENAI_MODELS_URL = "https://api.openai.com/v1/models";
+const MODEL = process.env.OPENAI_MODEL || "gpt-5-mini";
 
-import { isRateLimited, summarizeRateLimit } from "../src/lib/chat.js";
+function cors(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Client-Id");
+  res.setHeader("Cache-Control", "no-store");
+}
 
-const V0_API_BASE = "https://api.v0.dev/v1";
-const V0_CHAT_URL = `${V0_API_BASE}/chat/completions`;
-const V0_RATELIMIT_URL = `${V0_API_BASE}/rate-limits`;
-
-// v0's models are tuned for UI/code generation. Force plain prose so the
-// extension behaves like a writing assistant, not an app generator.
-const BASE_SYSTEM =
-    "You are a helpful writing assistant. Always reply in plain, conversational text. " +
-    "Do not generate code, code blocks, components, apps, or UI unless the user explicitly asks for code.";
-
-// Fetch v0's current rate-limit status. Returns the raw object, or null if the
-// check fails (so callers can degrade gracefully instead of blocking).
-async function fetchRateLimit(apiKey) {
-    try {
-        const rl = await fetch(V0_RATELIMIT_URL, {
-            headers: { "Authorization": `Bearer ${apiKey}` }
-        });
-        if (rl.ok) {
-            return await rl.json();
-        }
-    } catch (err) {
-        console.error("Rate-limit check failed:", err);
-    }
-    return null;
+function send(res, status, body) {
+  cors(res);
+  return res.status(status).json(body);
 }
 
 export default async function handler(req, res) {
-    // CORS — allow the browser extension to call this endpoint.
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  cors(res);
+  if (req.method === "OPTIONS") return res.status(204).end();
 
-    if (req.method === "OPTIONS") {
-        return res.status(204).end();
-    }
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return send(res, 503, {
+      ok: false,
+      vercel: true,
+      openai: false,
+      error: "OPENAI_API_KEY is not configured on Vercel."
+    });
+  }
 
-    const apiKey = process.env.V0_API_KEY;
-    if (!apiKey) {
-        console.error("Missing V0_API_KEY environment variable");
-        return res.status(500).json({ error: "Server is not configured with an API key" });
-    }
-
-    // GET → quota status only (used by the popup's quota bar on open).
-    if (req.method === "GET") {
-        const rate = await fetchRateLimit(apiKey);
-        return res.status(200).json({ rateLimit: summarizeRateLimit(rate) });
-    }
-
-    if (req.method !== "POST") {
-        return res.status(405).json({ error: "Method not allowed" });
-    }
-
-    const prompt = req.body && req.body.prompt;
-    if (!prompt || typeof prompt !== "string") {
-        return res.status(400).json({ error: "Missing 'prompt' in request body" });
-    }
-
-    // Mode instruction from the extension, combined with the plain-text base.
-    const modeSystem = req.body && typeof req.body.system === "string" ? req.body.system.trim() : "";
-    const system = [BASE_SYSTEM, modeSystem].filter(Boolean).join("\n\n");
-
-    const messages = [
-        { role: "system", content: system },
-        { role: "user", content: prompt }
-    ];
-
-    const model = process.env.AI_MODEL || "v0-1.5-md";
-
-    // Rate limiting — check v0's allowance before spending a request.
-    const rate = await fetchRateLimit(apiKey);
-    if (isRateLimited(rate)) {
-        const summary = summarizeRateLimit(rate);
-        if (summary && summary.reset) {
-            const secs = Math.max(1, Math.ceil((summary.reset - Date.now()) / 1000));
-            res.setHeader("Retry-After", String(secs));
-        }
-        return res.status(429).json({
-            error: "Rate limit reached. Please try again later.",
-            rateLimit: summary
-        });
-    }
-
+  if (req.method === "GET") {
     try {
-        const upstream = await fetch(V0_CHAT_URL, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ model, messages })
+      const upstream = await fetch(OPENAI_MODELS_URL, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}` }
+      });
+      const data = await upstream.json().catch(() => ({}));
+      if (!upstream.ok) {
+        console.error("[Smart Chat API] OpenAI health check failed", {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          code: data?.error?.code || data?.error?.type || null,
+          message: data?.error?.message || null
         });
-
-        // Surface upstream rate limiting as a 429 too.
-        if (upstream.status === 429) {
-            return res.status(429).json({
-                error: "Rate limit reached. Please try again later.",
-                rateLimit: summarizeRateLimit(rate)
-            });
-        }
-
-        if (!upstream.ok) {
-            const detail = await upstream.text();
-            console.error("v0 API error:", upstream.status, detail);
-            return res.status(502).json({ error: "AI provider returned an error" });
-        }
-
-        const data = await upstream.json();
-        const text = data?.choices?.[0]?.message?.content?.trim();
-        if (!text) {
-            return res.status(502).json({ error: "Empty response from AI provider" });
-        }
-
-        // Return token usage and remaining rate limit so the extension can show them.
-        return res.status(200).json({
-            text,
-            usage: data.usage || null,
-            rateLimit: summarizeRateLimit(rate)
-        });
-    } catch (err) {
-        console.error("Proxy error:", err);
-        return res.status(502).json({ error: "AI service unavailable" });
+      }
+      return send(res, upstream.ok ? 200 : upstream.status, {
+        ok: upstream.ok,
+        vercel: true,
+        openai: upstream.ok,
+        model: MODEL,
+        upstreamStatus: upstream.status,
+        upstreamCode: data?.error?.code || null,
+        error: upstream.ok ? null : (data?.error?.message || `OpenAI health check failed (${upstream.status}).`)
+      });
+    } catch (error) {
+      console.error("[Smart Chat API] OpenAI health check network error", {
+        name: error?.name,
+        message: error?.message
+      });
+      return send(res, 502, {
+        ok: false,
+        vercel: true,
+        openai: false,
+        error: "Vercel is running, but OpenAI could not be reached."
+      });
     }
+  }
+
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "GET, POST, OPTIONS");
+    return send(res, 405, { ok: false, error: "Method not allowed." });
+  }
+
+  const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
+  const system = typeof req.body?.system === "string" ? req.body.system.trim() : "";
+  if (!prompt) return send(res, 400, { ok: false, error: "Prompt is required." });
+  if (prompt.length > 6000) return send(res, 413, { ok: false, error: "Prompt is too long." });
+
+  try {
+    const upstream = await fetch(OPENAI_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        instructions: system || "Be concise, practical, and natural.",
+        input: prompt,
+        max_output_tokens: 1200
+      })
+    });
+
+    const data = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) {
+      const retryAfter = upstream.headers.get("retry-after");
+      console.error("[Smart Chat API] OpenAI request failed", {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        code: data?.error?.code || data?.error?.type || null,
+        message: data?.error?.message || null,
+        retryAfter
+      });
+      if (retryAfter) res.setHeader("Retry-After", retryAfter);
+      return send(res, upstream.status, {
+        ok: false,
+        provider: "openai",
+        upstreamStatus: upstream.status,
+        upstreamCode: data?.error?.code || data?.error?.type || null,
+        error: data?.error?.message || `OpenAI request failed (${upstream.status}).`
+      });
+    }
+
+    const text = data.output_text || data.output?.flatMap(item => item.content || [])
+      .find(part => part.type === "output_text")?.text || "";
+
+    if (!text.trim()) return send(res, 502, { ok: false, error: "OpenAI returned an empty response." });
+
+    return send(res, 200, {
+      ok: true,
+      text: text.trim(),
+      usage: data.usage || null,
+      model: data.model || MODEL
+    });
+  } catch (error) {
+    console.error("[Smart Chat API] OpenAI network/request exception", {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack
+    });
+    return send(res, 502, { ok: false, error: "Unable to reach OpenAI." });
+  }
 }

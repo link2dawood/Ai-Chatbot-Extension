@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Smart Chat Assistant</title>
+  <link rel="stylesheet" href="../src/styles/sidebar.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../assets/logo.svg" class="brand-mark" alt="">
+        <div class="brand-copy">
+          <strong>Smart Chat</strong>
+          <span id="connectionLabel">Ready</span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="icon-button" id="themeToggle" type="button" aria-label="Toggle theme" title="Toggle theme"></button>
+        <button class="icon-button" id="settingsToggle" type="button" aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 9 19.37a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.63 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15 4.63a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <nav class="mode-strip" aria-label="Assistant mode">
+      <button class="mode-pill is-active" data-mode="chat" type="button"><span>Chat</span></button>
+      <button class="mode-pill" data-mode="rewrite" type="button"><span>Rewrite</span></button>
+      <button class="mode-pill" data-mode="grammar" type="button"><span>Grammar</span></button>
+      <button class="mode-pill" data-mode="summarize" type="button"><span>Summarize</span></button>
+      <button class="mode-pill" data-mode="explain" type="button"><span>Explain</span></button>
+    </nav>
+
+    <section class="quota-row" aria-live="polite">
+      <div>
+        <span class="quota-label">Free plan</span>
+        <strong id="quotaText">10 chats left</strong>
+      </div>
+      <div class="quota-meter" aria-hidden="true"><span id="quotaFill"></span></div>
+    </section>
+
+    <section class="mode-context" aria-live="polite">
+      <div class="mode-context-copy">
+        <span id="modeKicker">GENERAL ASSISTANT</span>
+        <h1 id="modeTitle">What can I help with?</h1>
+        <p id="modeDescription">Ask a question or work through something without leaving the page.</p>
+      </div>
+    </section>
+
+    <section id="chatBox" class="chat" aria-live="polite"></section>
+
+    <section class="composer-wrap">
+      <div class="composer">
+        <textarea id="inputText" rows="1" maxlength="6000" placeholder="Ask anything…"></textarea>
+        <div class="composer-footer">
+          <div class="composer-tools">
+            <button class="mini-button" id="insertBtn" type="button" title="Insert last reply into the active page field">
+              <svg viewBox="0 0 24 24"><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
+              Insert
+            </button>
+            <span id="charCounter" class="counter">0 / 6000</span>
+          </div>
+          <button id="sendBtn" class="send-button" type="button" aria-label="Send">
+            <svg viewBox="0 0 24 24"><path d="m5 12 14-7-4.3 14-3.2-5.2L5 12Z"/><path d="m11.5 13.8 3.2-3.1"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="utility-row">
+        <button id="copyBtn" type="button">Copy reply</button>
+        <span>·</span>
+        <button id="exportBtn" type="button">Export</button>
+        <span>·</span>
+        <button id="clearBtn" type="button">Clear chat</button>
+      </div>
+    </section>
+  </main>
+
+  <aside id="settingsPanel" class="settings-panel" aria-hidden="true">
+    <div class="settings-head">
+      <div>
+        <span class="eyebrow">SETTINGS</span>
+        <h2>Smart Chat</h2>
+      </div>
+      <button class="icon-button" id="settingsClose" type="button" aria-label="Close settings">
+        <svg viewBox="0 0 24 24"><path d="M6 6 18 18M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="settings-body">
+      <div class="settings-card">
+        <span class="settings-card-label">AI SERVICE</span>
+        <strong>Vercel hosted</strong>
+        <p>The extension connects to your hosted `/api/chat` endpoint. No API key is stored in the browser.</p>
+        <button id="testConnection" class="secondary-button" type="button">Check connection</button>
+        <p id="settingsStatus" class="settings-status" role="status"></p>
+      </div>
+      <div class="settings-card compact">
+        <span class="settings-card-label">FREE PLAN</span>
+        <strong>10 successful chats</strong>
+        <p>The free quota is saved in Chrome local storage on this browser.</p>
+      </div>
+      <div class="settings-card compact">
+        <span class="settings-card-label">PRIVACY</span>
+        <strong>Local history</strong>
+        <p>Conversation history and quota usage are stored locally in the extension.</p>
+      </div>
+      <p class="version-note">Smart Chat Assistant · Sidebar edition</p>
+    </div>
+  </aside>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script type="module" src="../src/scripts/sidebar.js"></script>
+</body>
+</html>

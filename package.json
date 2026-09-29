@@ -1,15 +1,10 @@
 {
-  "name": "ai-writing-assistant-extension",
-  "version": "1.0.0",
+  "name": "smart-chat-assistant",
+  "version": "2.4.0",
   "private": true,
   "type": "module",
-  "description": "Zero-setup AI writing assistant Chrome extension backed by a Vercel serverless proxy.",
   "scripts": {
-    "test": "node --test",
-    "lint": "node --check api/chat.js && node --check src/lib/markdown.js && node --check src/lib/chat.js && node --check src/scripts/popup.js && node --check tests/markdown.test.js && node --check tests/chat.test.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "license": "MIT"
+    "lint": "node --check background.js && node --check src/scripts/sidebar.js && node --check src/lib/api.js && node --check src/lib/markdown.js && node --check api/chat.js",
+    "test": "node --test tests/*.test.js"
+  }
 }
