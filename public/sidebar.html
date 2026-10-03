@@ -98,6 +98,15 @@
         <p id="settingsStatus" class="settings-status" role="status"></p>
         <ul id="providerResults" class="provider-results" aria-live="polite"></ul>
       </div>
+      <div class="settings-card">
+        <span class="settings-card-label">PAID PLAN</span>
+        <strong>License key</strong>
+        <p>Paid users get the hosted AI providers. Paste the license key from your purchase email.</p>
+        <input id="licenseInput" class="text-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste license key">
+        <button id="saveLicense" class="secondary-button" type="button">Save and verify</button>
+        <p id="licenseStatus" class="settings-status" role="status"></p>
+        <a id="upgradeLink" class="upgrade-link" href="#" target="_blank" rel="noopener" hidden>Upgrade to paid</a>
+      </div>
       <div class="settings-card compact">
         <span class="settings-card-label">FREE PLAN</span>
         <strong>10 successful chats</strong>

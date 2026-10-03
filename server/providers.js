@@ -26,7 +26,7 @@ export const PROVIDERS = {
     label: "OpenAI",
     keyEnv: "OPENAI_API_KEY",
     modelEnv: "OPENAI_MODEL",
-    defaultModel: "gpt-5-mini"
+    defaultModel: "gpt-5-nano"
   },
   deepseek: {
     label: "DeepSeek",
@@ -38,7 +38,7 @@ export const PROVIDERS = {
     label: "Anthropic",
     keyEnv: "ANTHROPIC_API_KEY",
     modelEnv: "ANTHROPIC_MODEL",
-    defaultModel: "claude-opus-5-5"
+    defaultModel: "claude-haiku-4-5"
   },
   v0: {
     label: "v0",
@@ -281,18 +281,21 @@ function fromAnthropicError(error, stage) {
   return new ProviderError("anthropic", { status: 502, code: "unknown", stage, message: error?.message || "Anthropic request failed." });
 }
 
-function anthropicRequest({ model, system, prompt, maxTokens, effort }) {
-  const effortLevel = effort || process.env.ANTHROPIC_EFFORT;
+// Haiku 4.5 rejects `effort` and the refusal-fallback beta, so those are only
+// sent to the newer models that support them.
+const supportsFallbacks = (model) => /^claude-(fable|mythos|opus|sonnet)-[5-9]/.test(model);
+
+function anthropicRequest({ model, system, prompt, maxTokens }) {
+  const effort = process.env.ANTHROPIC_EFFORT?.trim();
   return {
     model,
     max_tokens: maxTokens,
     ...(system ? { system } : {}),
-    ...(effortLevel ? { output_config: { effort: effortLevel } } : {}),
+    ...(effort && supportsFallbacks(model) ? { output_config: { effort } } : {}),
     messages: [{ role: "user", content: prompt }],
     // If the model declines for policy reasons, the API retries on its
     // server-defined fallback model within the same call.
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default"
+    ...(supportsFallbacks(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {})
   };
 }
 
@@ -308,7 +311,7 @@ const anthropic = {
     if (verify) {
       try {
         await client.beta.messages.create(
-          anthropicRequest({ model, prompt: "Reply with OK.", maxTokens: 1024, effort: "low" }),
+          anthropicRequest({ model, prompt: "Reply with OK.", maxTokens: 1024 }),
           { timeout: CHECK_TIMEOUT_MS * 3 }
         );
       } catch (error) {

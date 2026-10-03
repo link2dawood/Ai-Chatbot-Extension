@@ -8,12 +8,12 @@ export const PROVIDER_OPTIONS = [
   { id: "v0", label: "v0" }
 ];
 
-export async function sendAssistantRequest({ prompt, system, provider, signal }) {
+export async function sendAssistantRequest({ prompt, system, provider, licenseKey, signal }) {
   let response;
   try {
     response = await fetch(API_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: licenseHeaders(licenseKey, { "Content-Type": "application/json" }),
       body: JSON.stringify({ prompt, system, provider: provider || "auto" }),
       signal
     });
@@ -37,6 +37,8 @@ export async function sendAssistantRequest({ prompt, system, provider, signal })
     error.upstreamCode = data?.upstreamCode || null;
     error.provider = data?.provider || null;
     error.hint = data?.hint || null;
+    error.code = data?.code || null;
+    error.upgradeUrl = data?.upgradeUrl || null;
     error.retryAfter = response.headers.get("retry-after");
     throw error;
   }
@@ -49,14 +51,14 @@ export async function sendAssistantRequest({ prompt, system, provider, signal })
 // Returns the server's per-provider report:
 // { ok, defaultProvider, providers: { openai: { ok, configured, model, error, hint, ... }, ... } }
 // A 503 still carries the report (it means no provider passed), so it is returned, not thrown.
-export async function checkProviders({ provider, verify = true } = {}) {
+export async function checkProviders({ provider, verify = true, licenseKey } = {}) {
   const url = new URL(API_ENDPOINT);
   if (provider && provider !== "auto") url.searchParams.set("provider", provider);
   if (verify) url.searchParams.set("verify", "1");
 
   let response;
   try {
-    response = await fetch(url, { method: "GET" });
+    response = await fetch(url, { method: "GET", headers: licenseHeaders(licenseKey) });
   } catch (cause) {
     throw unreachable(cause);
   }
@@ -70,6 +72,11 @@ export async function checkProviders({ provider, verify = true } = {}) {
     response: data
   });
   throw new Error(data?.error || `Service check failed (${response.status}). Is the latest api/chat.js deployed?`);
+}
+
+function licenseHeaders(licenseKey, headers = {}) {
+  const key = typeof licenseKey === "string" ? licenseKey.trim() : "";
+  return key ? { ...headers, "X-License-Key": key } : headers;
 }
 
 function unreachable(cause) {
