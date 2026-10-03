@@ -33,3 +33,19 @@ See [API-SETUP.md](API-SETUP.md) for configuration. Set at least one provider ke
 If the backend URL changes, update `API_ENDPOINT` in `src/lib/api.js` and the matching `host_permissions` entry in `manifest.json`.
 
 For local backend development, copy `.env.example` to `.env.local`, fill in server credentials, and run `vercel dev`. To connect locally, temporarily set the extension endpoint and host permission to the local server address.
+
+## Publishing to the Chrome Web Store
+
+```
+npm run package
+```
+
+This writes `dist/smart-chat-assistant-v<version>.zip` with only the extension files (`manifest.json`, `background.js`, `public/`, `src/`, `assets/`). The Vercel backend, `node_modules`, tests and docs are not included. Upload that file in the Web Store dashboard under Package.
+
+Before it writes the zip, the script fails if:
+- the manifest asks for a permission outside `ALLOWED_PERMISSIONS` (in `scripts/package.mjs`; keep it in step with the justifications in the store's Privacy tab);
+- `host_permissions` is anything other than the backend in `src/lib/api.js`;
+- a page loads a script or asset from the network, a script uses `eval`, or a file the manifest points to is missing;
+- `manifest.json` and `package.json` have different versions.
+
+To release an update, raise `version` in both `manifest.json` and `package.json`, run `npm run package`, and upload the new zip.

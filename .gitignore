@@ -8,3 +8,6 @@
 
 # Dependencies
 node_modules/
+
+# Web Store package output
+dist/

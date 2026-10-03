@@ -27,3 +27,6 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Package check (Web Store zip)
+        run: npm run package
