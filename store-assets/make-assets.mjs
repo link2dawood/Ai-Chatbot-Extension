@@ -3,8 +3,15 @@
 //   npm install --no-save playwright   (once; the browser must be installed)
 //   node store-assets/make-assets.mjs
 //
-// The store only accepts JPEG or PNG uploads, so upload the files in out/.
-// The SVG files in out/svg/ are editable vector masters (needs pdftocairo).
+// Output: out/svg/*.svg are the vector masters. out/png/*.png are rendered FROM
+// those SVG files (so editing an SVG and re-running with --png-only updates the
+// PNG), and out/*.jpg are the quick page screenshots. The store accepts only
+// JPEG or 24-bit PNG, so upload the PNGs (or JPEGs), not the SVGs.
+//
+//   node store-assets/make-assets.mjs              rebuild everything
+//   node store-assets/make-assets.mjs --png-only   re-render PNGs from the SVGs in out/svg/
+//
+// PNG needs ImageMagick (convert); SVG needs pdftocairo.
 //
 // The side panel in every image is the real public/sidebar.html running in
 // Chromium, with its stored chat history pre-filled. Nothing in the panel is
@@ -21,10 +28,17 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "store-assets", "out");
 const svgDir = join(outDir, "svg");
+const pngDir = join(outDir, "png");
 const tmpDir = join(root, "store-assets", ".tmp");
 mkdirSync(outDir, { recursive: true });
 mkdirSync(svgDir, { recursive: true });
+mkdirSync(pngDir, { recursive: true });
 mkdirSync(tmpDir, { recursive: true });
+
+// PNG: lossless, and the store wants 24-bit with no alpha, so the alpha channel
+// that Chromium writes is flattened with ImageMagick.
+let hasConvert = true;
+try { execFileSync("convert", ["-version"], { stdio: "ignore" }); } catch { hasConvert = false; }
 
 // SVG masters: each page is printed to PDF by Chromium (text and shapes stay
 // vector) and converted with poppler's pdftocairo. Blur shadows and backdrop
@@ -185,10 +199,34 @@ async function render(html, width, height, file, { vector = true } = {}) {
   await context.close();
 }
 
+// Renders every out/svg/*.svg to a 24-bit PNG at the SVG's own pixel size.
+async function rasterizeSvgs() {
+  if (!hasConvert) { console.log("ImageMagick convert not found: cannot make PNGs."); return; }
+  for (const file of readdirSync(svgDir).filter(f => f.endsWith(".svg")).sort()) {
+    const svg = readFileSync(join(svgDir, file), "utf8");
+    const [, width, height] = svg.match(/<svg[^>]*?\swidth="(\d+)"\sheight="(\d+)"/) || [];
+    if (!width) { console.log("skipped", file, "(no width/height on the <svg> element)"); continue; }
+    const context = await browser.newContext({ viewport: { width: +width, height: +height }, deviceScaleFactor: 1 });
+    const page = await context.newPage();
+    await page.setContent(`<body style="margin:0;background:#fff">${svg}</body>`);
+    const raw = join(tmpDir, file.replace(/\.svg$/, ".raw.png"));
+    await page.screenshot({ path: raw, type: "png", clip: { x: 0, y: 0, width: +width, height: +height } });
+    await context.close();
+    const out = join(pngDir, file.replace(/\.svg$/, ".png"));
+    // Flatten onto white and drop alpha: the store wants 24-bit PNG.
+    execFileSync("convert", [raw, "-background", "white", "-alpha", "remove", "-alpha", "off", "-strip", `PNG24:${out}`]);
+    console.log("wrote", `png/${file.replace(/\.svg$/, ".png")}`, `${width}x${height}`);
+  }
+}
+
+const pngOnly = process.argv.includes("--png-only");
 let n = 1;
-for (const [name, shot] of Object.entries(SHOTS)) await render(screenshotHtml(shot), 1280, 800, `screenshot-${n++}-${name}.jpg`);
-await render(promoSmallHtml(), 440, 280, "promo-small-440x280.jpg");
-await render(marqueeHtml(), 1400, 560, "promo-marquee-1400x560.jpg");
+if (!pngOnly) for (const [name, shot] of Object.entries(SHOTS)) await render(screenshotHtml(shot), 1280, 800, `screenshot-${n++}-${name}.jpg`);
+if (!pngOnly) {
+  await render(promoSmallHtml(), 440, 280, "promo-small-440x280.jpg");
+  await render(marqueeHtml(), 1400, 560, "promo-marquee-1400x560.jpg");
+}
+await rasterizeSvgs();
 
 await browser.close();
 server.close();
