@@ -1,5 +1,5 @@
 import { renderMarkdown } from "../lib/markdown.js";
-import { sendAssistantRequest, pingAssistant } from "../lib/api.js";
+import { sendAssistantRequest, checkProviders, PROVIDER_OPTIONS } from "../lib/api.js";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -68,7 +68,7 @@ const MODES = {
   }
 };
 
-const DEFAULT_SETTINGS = { theme: "light", mode: "chat" };
+const DEFAULT_SETTINGS = { theme: "light", mode: "chat", provider: "auto" };
 let settings = { ...DEFAULT_SETTINGS };
 let history = [];
 let freeChatsUsed = 0;
@@ -82,6 +82,7 @@ const sendBtn = $("#sendBtn");
 const charCounter = $("#charCounter");
 const connectionLabel = $("#connectionLabel");
 const settingsPanel = $("#settingsPanel");
+const providerSelect = $("#providerSelect");
 
 function storageGet(keys) { return new Promise(resolve => chrome.storage.local.get(keys, resolve)); }
 function storageSet(data) { return new Promise(resolve => chrome.storage.local.set(data, resolve)); }
@@ -128,6 +129,13 @@ function bindEvents() {
   $("#settingsClose").addEventListener("click", closeSettings);
   $("#themeToggle").addEventListener("click", toggleTheme);
   $("#testConnection").addEventListener("click", testConnection);
+  providerSelect.addEventListener("change", async () => {
+    settings.provider = providerSelect.value;
+    await persistSettings();
+    $("#providerResults").innerHTML = "";
+    setSettingsStatus("", "");
+    updateConnectionButton();
+  });
   $("#copyBtn").addEventListener("click", copyLastReply);
   $("#insertBtn").addEventListener("click", insertLastReply);
   $("#clearBtn").addEventListener("click", clearChat);
@@ -147,7 +155,23 @@ function applySettingsToUI() {
   document.body.classList.toggle("dark", settings.theme === "dark");
   updateThemeIcon();
   updateModeUI();
+  providerSelect.innerHTML = PROVIDER_OPTIONS
+    .map(option => `<option value="${escapeAttr(option.id)}">${escapeText(option.label)}</option>`)
+    .join("");
+  if (!PROVIDER_OPTIONS.some(option => option.id === settings.provider)) settings.provider = "auto";
+  providerSelect.value = settings.provider;
+  updateConnectionButton();
   connectionLabel.textContent = "Ready";
+}
+
+function providerLabel(id) {
+  return PROVIDER_OPTIONS.find(option => option.id === id)?.label || id;
+}
+
+function updateConnectionButton() {
+  $("#testConnection").textContent = settings.provider === "auto"
+    ? "Check all connections"
+    : `Check ${providerLabel(settings.provider)} connection`;
 }
 
 function updateModeUI() {
@@ -197,24 +221,64 @@ function closeSettings() {
 
 async function testConnection() {
   const button = $("#testConnection");
+  const list = $("#providerResults");
   button.disabled = true;
   button.textContent = "Checking…";
-  setSettingsStatus("", "");
+  list.innerHTML = "";
+  setSettingsStatus("Checking keys and sending a small test request…", "");
   try {
-    const health = await pingAssistant();
-    if (health?.vercel && health?.openai) {
-      setSettingsStatus(`Connected: Vercel + OpenAI${health.model ? ` · ${health.model}` : ""}`, "success");
-      connectionLabel.textContent = "Connected";
+    const report = await checkProviders({ provider: settings.provider, verify: true });
+    const results = Object.values(report.providers);
+    list.innerHTML = results.map(renderProviderResult).join("");
+
+    const passed = results.filter(result => result.ok);
+    if (settings.provider !== "auto") {
+      const result = report.providers[settings.provider];
+      if (!result?.ok) throw new Error(`${providerLabel(settings.provider)} is not connected.`);
+      setSettingsStatus(`Connected and verified: ${result.label} · ${result.model}`, "success");
+    } else if (passed.length) {
+      const fallback = report.defaultProvider ? ` Auto uses ${providerLabel(report.defaultProvider)}.` : "";
+      setSettingsStatus(`${passed.length} of ${results.length} providers connected.${fallback}`, "success");
     } else {
-      throw new Error(health?.error || "Vercel is reachable, but OpenAI is not connected.");
+      throw new Error(report.error || "No provider is connected.");
     }
+    connectionLabel.textContent = "Connected";
   } catch (error) {
     console.error("[Smart Chat] Connection test error", error);
     setSettingsStatus(error.message || "Could not reach the Vercel endpoint.", "error");
   } finally {
     button.disabled = false;
-    button.textContent = "Check connection";
+    updateConnectionButton();
   }
+}
+
+function renderProviderResult(result) {
+  const state = result.ok ? "ok" : (result.configured ? "fail" : "off");
+  const status = result.ok
+    ? (result.verified ? "Verified" : "Key accepted")
+    : (result.configured ? "Failed" : "Not set");
+  const timing = Number.isFinite(result.latencyMs) ? `${result.latencyMs} ms` : "";
+  const details = [];
+  if (result.ok) {
+    details.push(`<p>Model ${escapeText(result.model)}</p>`);
+  } else if (result.configured) {
+    const where = result.stage ? `${result.stage} step: ` : "";
+    details.push(`<p class="provider-error">${escapeText(where + (result.error || "Unknown error"))}</p>`);
+  } else {
+    details.push(`<p>Add ${escapeText(result.keyEnv)} on Vercel to enable.</p>`);
+  }
+  if (result.hint && result.configured) details.push(`<p>${escapeText(result.hint)}</p>`);
+  (result.warnings || []).forEach(warning => details.push(`<p>${escapeText(warning)}</p>`));
+  return `
+    <li class="provider-result ${state}">
+      <div class="provider-result-head">
+        <span class="provider-dot" aria-hidden="true"></span>
+        <span>${escapeText(result.label)}</span>
+        <span class="provider-tag">${escapeText(status)}</span>
+        <small>${escapeText(timing)}</small>
+      </div>
+      ${details.join("")}
+    </li>`;
 }
 
 function setSettingsStatus(message, type) {
@@ -289,7 +353,7 @@ async function sendCurrentMessage() {
 
   try {
     const mode = MODES[settings.mode] || MODES.chat;
-    const result = await sendAssistantRequest({ prompt: text, system: mode.system });
+    const result = await sendAssistantRequest({ prompt: text, system: mode.system, provider: settings.provider });
     removeTyping();
     lastAssistantText = result.text;
     history.push({ role: "assistant", text: result.text, at: Date.now() });
@@ -321,16 +385,14 @@ async function sendCurrentMessage() {
 }
 
 function friendlyError(error) {
-  const code = String(error.upstreamCode || "").toLowerCase();
-  if (error.status === 401 || code.includes("invalid_api_key")) return "OpenAI rejected the API key. Replace OPENAI_API_KEY in Vercel and redeploy.";
-  if (error.status === 429 || code.includes("insufficient_quota")) {
-    if (code.includes("insufficient_quota")) return "OpenAI API quota/billing is unavailable for this project. Add API billing/credits, then try again.";
-    return `The AI service is rate limited right now.${error.retryAfter ? ` Try again in about ${error.retryAfter} seconds.` : " Please try again shortly."}`;
+  const name = error.provider ? providerLabel(error.provider) : "The AI service";
+  if (error.status === 0) return error.message;
+  if (error.status === 429 && !error.hint) {
+    return `${name} is rate limited right now.${error.retryAfter ? ` Try again in about ${error.retryAfter} seconds.` : " Please try again shortly."}`;
   }
-  if (error.status === 403) return `OpenAI denied access${error.upstreamCode ? ` (${error.upstreamCode})` : ""}. Check project permissions and model access.`;
-  if (error.status === 404 || code.includes("model")) return `The configured OpenAI model may be unavailable${error.upstreamCode ? ` (${error.upstreamCode})` : ""}. Check OPENAI_MODEL in Vercel.`;
-  if (/Failed to fetch/i.test(error.message)) return "Could not reach the Vercel service. Check your connection and try again.";
-  return error.message || "Something went wrong while contacting the AI service.";
+  const message = error.message || `Something went wrong while contacting ${name}.`;
+  const prefix = error.provider && !message.includes(name) ? `${name}: ` : "";
+  return error.hint ? `${prefix}${message}\n\n${error.hint}` : `${prefix}${message}`;
 }
 
 function updateQuotaUI() {
