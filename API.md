@@ -42,7 +42,7 @@ Success, `200`:
 {
   "ok": true,
   "provider": "deepseek",
-  "model": "deepseek-chat",
+  "model": "deepseek-flash",
   "text": "Hello, I wanted to check that you received my email about the invoice. Please could you arrange payment at your earliest convenience? Thank you.",
   "usage": { "prompt_tokens": 210, "completion_tokens": 38, "total_tokens": 248 }
 }
@@ -82,7 +82,7 @@ Sample response:
   "entitled": true,
   "defaultProvider": "deepseek",
   "providers": {
-    "deepseek": { "provider": "deepseek", "label": "DeepSeek", "configured": true, "ok": true, "verified": true, "model": "deepseek-chat", "latencyMs": 940, "warnings": [] },
+    "deepseek": { "provider": "deepseek", "label": "DeepSeek", "configured": true, "ok": true, "verified": true, "model": "deepseek-flash", "latencyMs": 940, "warnings": [] },
     "openai":   { "provider": "openai", "label": "OpenAI", "configured": false, "ok": false, "stage": "config", "error": "OPENAI_API_KEY is not set on Vercel.", "hint": "Add OPENAI_API_KEY in Vercel → Project → Settings → Environment Variables, then redeploy." }
   },
   "error": null
