@@ -13,7 +13,7 @@ Set these in Vercel → Project → Settings → Environment Variables. You can 
 | Provider | Key variable | Model variable (default) | Notes |
 |---|---|---|---|
 | OpenAI | `OPENAI_API_KEY` | `OPENAI_MODEL` (`gpt-5-nano`) | Responses API. Needs API billing, which is separate from a ChatGPT subscription. |
-| DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_MODEL` (`deepseek-chat`) | The account needs a positive balance. |
+| DeepSeek | `DEEPSEEK_API_KEY` | `DEEPSEEK_MODEL` (`deepseek-flash`) | The account needs a positive balance. |
 | Anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL` (`claude-haiku-4-5`) | Official SDK. Cheapest Claude model by default. `ANTHROPIC_EFFORT` is optional and only applies to Opus/Sonnet 5+ models. |
 | v0 | `V0_API_KEY` | `V0_MODEL` (`v0-1.5-md`) | Needs a v0 Premium/Team plan with usage-based billing. Otherwise v0 returns 404. |
 

@@ -32,7 +32,7 @@ export const PROVIDERS = {
     label: "DeepSeek",
     keyEnv: "DEEPSEEK_API_KEY",
     modelEnv: "DEEPSEEK_MODEL",
-    defaultModel: "deepseek-chat"
+    defaultModel: "deepseek-flash"
   },
   anthropic: {
     label: "Anthropic",
@@ -205,11 +205,15 @@ const openai = {
 
 // ---------- OpenAI-compatible chat completions (DeepSeek, v0) ----------
 
-function chatCompletionsProvider(provider, { baseUrl, checkPath, baseSystem = "" }) {
+function chatCompletionsProvider(provider, { baseUrl, checkPath, modelsPath = null, baseSystem = "" }) {
   return {
     async check({ key, model, verify }) {
       const auth = { Authorization: `Bearer ${key}` };
-      const data = await request(provider, `${baseUrl}${checkPath}`, { headers: auth }, { timeoutMs: CHECK_TIMEOUT_MS, stage: "auth" });
+      let data = await request(provider, `${baseUrl}${checkPath}`, { headers: auth }, { timeoutMs: CHECK_TIMEOUT_MS, stage: "auth" });
+      if (modelsPath) {
+        // Best effort: a provider whose model list is unavailable must not fail the check.
+        try { data = await request(provider, `${baseUrl}${modelsPath}`, { headers: auth }, { timeoutMs: CHECK_TIMEOUT_MS, stage: "model" }); } catch { data = null; }
+      }
       if (Array.isArray(data?.data) && data.data.length && !data.data.some(item => item.id === model)) {
         throw new ProviderError(provider, {
           status: 404,
@@ -251,8 +255,8 @@ function chatCompletionsProvider(provider, { baseUrl, checkPath, baseSystem = ""
 }
 
 const deepseek = chatCompletionsProvider("deepseek", { baseUrl: "https://api.deepseek.com", checkPath: "/models" });
-// v0 has no public model list; the rate-limit endpoint is an authenticated read.
-const v0 = chatCompletionsProvider("v0", { baseUrl: "https://api.v0.dev/v1", checkPath: "/rate-limits", baseSystem: V0_BASE_SYSTEM });
+// v0: the rate-limit endpoint is an authenticated read; the model list is checked best-effort.
+const v0 = chatCompletionsProvider("v0", { baseUrl: "https://api.v0.dev/v1", checkPath: "/rate-limits", modelsPath: "/models", baseSystem: V0_BASE_SYSTEM });
 
 // ---------- Anthropic (official SDK) ----------
 

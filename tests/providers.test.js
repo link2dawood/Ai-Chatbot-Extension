@@ -90,17 +90,17 @@ test("a rejected key reports the stage, status and a fix", async () => {
 test("DeepSeek check flags a model that is not in the account's list", async () => {
   process.env.DEEPSEEK_API_KEY = FAKE_DEEPSEEK_KEY;
   process.env.DEEPSEEK_MODEL = "deepseek-typo";
-  stubFetch([[url => url === "https://api.deepseek.com/models", () => json(200, { data: [{ id: "deepseek-chat" }, { id: "deepseek-reasoner" }] })]]);
+  stubFetch([[url => url === "https://api.deepseek.com/models", () => json(200, { data: [{ id: "deepseek-flash" }, { id: "deepseek-v4-pro" }] })]]);
   const result = await checkProvider("deepseek");
   assert.equal(result.ok, false);
   assert.equal(result.upstreamCode, "model_not_found");
-  assert.match(result.error, /deepseek-chat/);
+  assert.match(result.error, /deepseek-flash/);
 });
 
 test("DeepSeek verify surfaces insufficient balance (402)", async () => {
   process.env.DEEPSEEK_API_KEY = FAKE_DEEPSEEK_KEY;
   stubFetch([
-    [url => url === "https://api.deepseek.com/models", () => json(200, { data: [{ id: "deepseek-chat" }] })],
+    [url => url === "https://api.deepseek.com/models", () => json(200, { data: [{ id: "deepseek-flash" }] })],
     [url => url === "https://api.deepseek.com/chat/completions", () => json(402, { error: { message: "Insufficient Balance", type: "unknown_error" } })]
   ]);
   const result = await checkProvider("deepseek", { verify: true });
@@ -160,7 +160,7 @@ test("POST routes to the requested provider", async () => {
     const body = JSON.parse(init.body);
     assert.equal(body.messages[0].role, "system");
     assert.equal(body.messages[1].content, "hello");
-    return json(200, { model: "deepseek-chat", choices: [{ message: { content: "Hi there" } }] });
+    return json(200, { model: "deepseek-flash", choices: [{ message: { content: "Hi there" } }] });
   }]]);
   const res = await call({ method: "POST", body: { prompt: "hello", provider: "deepseek" } });
   assert.equal(res.statusCode, 200);
@@ -228,4 +228,37 @@ test("Anthropic defaults to Haiku and omits effort and fallbacks it does not sup
   const res = await call({ method: "POST", body: { prompt: "hello", provider: "anthropic" } });
   assert.equal(res.statusCode, 200, JSON.stringify(res.body));
   assert.equal(res.body.text, "Hi");
+});
+
+test("DeepSeek defaults to deepseek-flash", async () => {
+  process.env.DEEPSEEK_API_KEY = FAKE_DEEPSEEK_KEY;
+  stubFetch([
+    [url => url === "https://api.deepseek.com/models", () => json(200, { data: [{ id: "deepseek-flash" }, { id: "deepseek-v4-pro" }] })],
+    [url => url === "https://api.deepseek.com/chat/completions", (url, init) => {
+      assert.equal(JSON.parse(init.body).model, "deepseek-flash");
+      return json(200, { choices: [{ message: { content: "OK" } }] });
+    }]
+  ]);
+  const result = await checkProvider("deepseek", { verify: true });
+  assert.equal(result.ok, true, result.error);
+  assert.equal(result.model, "deepseek-flash");
+});
+
+test("v0 reports an unavailable model when its model list says so, and ignores an unavailable list", async () => {
+  process.env.V0_API_KEY = "v0-key";
+  stubFetch([
+    [url => url === "https://api.v0.dev/v1/rate-limits", () => json(200, {})],
+    [url => url === "https://api.v0.dev/v1/models", () => json(200, { data: [{ id: "v0-2-md" }] })]
+  ]);
+  let result = await checkProvider("v0");
+  assert.equal(result.ok, false);
+  assert.equal(result.upstreamCode, "model_not_found");
+  assert.match(result.error, /v0-2-md/);
+
+  stubFetch([
+    [url => url === "https://api.v0.dev/v1/rate-limits", () => json(200, {})],
+    [url => url === "https://api.v0.dev/v1/models", () => json(404, { error: "Not found" })]
+  ]);
+  result = await checkProvider("v0");
+  assert.equal(result.ok, true, "a missing model list must not fail the check");
 });
