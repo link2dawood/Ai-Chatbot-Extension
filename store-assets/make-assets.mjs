@@ -3,6 +3,9 @@
 //   npm install --no-save playwright   (once; the browser must be installed)
 //   node store-assets/make-assets.mjs
 //
+// The store only accepts JPEG or PNG uploads, so upload the files in out/.
+// The SVG files in out/svg/ are editable vector masters (needs pdftocairo).
+//
 // The side panel in every image is the real public/sidebar.html running in
 // Chromium, with its stored chat history pre-filled. Nothing in the panel is
 // mocked up by hand. The backdrop around it (captions, a sample email page) is
@@ -10,13 +13,25 @@
 
 import { chromium } from "playwright";
 import http from "node:http";
-import { mkdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "store-assets", "out");
+const svgDir = join(outDir, "svg");
+const tmpDir = join(root, "store-assets", ".tmp");
 mkdirSync(outDir, { recursive: true });
+mkdirSync(svgDir, { recursive: true });
+mkdirSync(tmpDir, { recursive: true });
+
+// SVG masters: each page is printed to PDF by Chromium (text and shapes stay
+// vector) and converted with poppler's pdftocairo. Blur shadows and backdrop
+// blur would be flattened into bitmaps, so the vector pass turns them off.
+let hasPdftocairo = true;
+try { execFileSync("pdftocairo", ["-v"], { stdio: "ignore" }); } catch { hasPdftocairo = false; }
+const NO_EFFECTS = "*{box-shadow:none !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;text-shadow:none !important}";
 
 const TYPES = { ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".html": "text/html", ".png": "image/png" };
 const server = http.createServer((req, res) => {
@@ -136,7 +151,7 @@ function marqueeHtml() {
 }
 
 const browser = await chromium.launch();
-async function render(html, width, height, file) {
+async function render(html, width, height, file, { vector = true } = {}) {
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
   // Give the panel its stored state and stub the extension APIs it calls.
   await context.addInitScript(() => {
@@ -150,8 +165,24 @@ async function render(html, width, height, file) {
   await page.waitForFunction(() => [...document.images].every(i => i.complete));
   await page.waitForTimeout(1200); // let the panel frames run their scripts
   await page.screenshot({ path: join(outDir, file), type: "jpeg", quality: 96 });
-  await context.close();
   console.log("wrote", file, `${width}x${height}`);
+
+  if (vector && hasPdftocairo) {
+    await page.emulateMedia({ media: "screen" });
+    for (const frame of page.frames()) await frame.addStyleTag({ content: NO_EFFECTS }).catch(() => {});
+    // A crisp outline stands in for the soft shadow around the panel.
+    await page.addStyleTag({ content: `@page{size:${width}px ${height}px;margin:0}html,body{margin:0}iframe{outline:1.5px solid rgba(20,40,34,.22) !important;outline-offset:-1px}` });
+    const base = file.replace(/\.jpg$/, "");
+    const pdf = join(tmpDir, `${base}.pdf`);
+    const svg = join(svgDir, `${base}.svg`);
+    await page.pdf({ path: pdf, width: `${width}px`, height: `${height}px`, printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 }, pageRanges: "1" });
+    execFileSync("pdftocairo", ["-svg", pdf, svg]);
+    // pdftocairo sizes the SVG in points; state the intended pixel size instead.
+    const text = readFileSync(svg, "utf8").replace(/<svg([^>]*?)\swidth="[^"]+"\sheight="[^"]+"/, `<svg$1 width="${width}" height="${height}"`);
+    writeFileSync(svg, text);
+    console.log("wrote", `svg/${base}.svg`);
+  }
+  await context.close();
 }
 
 let n = 1;
@@ -161,3 +192,5 @@ await render(marqueeHtml(), 1400, 560, "promo-marquee-1400x560.jpg");
 
 await browser.close();
 server.close();
+rmSync(tmpDir, { recursive: true, force: true });
+if (!hasPdftocairo) console.log("pdftocairo not found: skipped the SVG files (install poppler-utils).");

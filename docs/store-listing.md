@@ -83,3 +83,9 @@ Use these on the dawoodzafar.us pages. Keep to one idea per page.
 - **Meta description (under 155 characters):** `Smart Chat Assistant is a Chrome side-panel AI that rewrites, proofreads, summarizes and explains text without leaving the page. Try it free.`
 - **Headline (h1):** `AI writing and chat, right in your Chrome side panel`
 - Natural phrases to use in headings and text: AI writing assistant, Chrome side panel, rewrite text, grammar checker, summarize text, explain text.
+
+## Image files
+- Upload the JPEGs in `store-assets/out/`. The store accepts only JPEG or 24-bit PNG.
+- `store-assets/out/svg/` holds the same seven images as editable vector SVGs (no embedded bitmaps, text converted to outlines). Open them in Figma, Inkscape or Illustrator to change colours or wording, then export JPEG or PNG for upload.
+- `node store-assets/make-assets.mjs` regenerates both sets. The SVG step needs `pdftocairo` (poppler-utils).
+
