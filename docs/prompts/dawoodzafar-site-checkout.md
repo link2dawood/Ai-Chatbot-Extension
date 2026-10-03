@@ -23,7 +23,13 @@ Before writing anything, inspect the repo: framework and version, language (Type
 1. `/smart-chat`: product landing page. Hero with the one-line value, the five modes as short cards, how it works in three steps (install, open the side panel, use it), a pricing summary, an FAQ, and a call to action.
 2. `/smart-chat/pricing`: Free and Premium Access side by side. The Premium Access button goes to checkout (see below). Add a "Manage or cancel subscription" link to the customer portal and a "Have a license key?" help link.
 3. `/smart-chat/success`: the page buyers land on after paying. Explain: (1) check your email for the license key from Polar, (2) open the extension → Settings → Paid plan, (3) paste the key and press Save and verify. Include the customer portal link for finding the key again and a support email link. Do not show or accept a license key on this page.
-4. `/smart-chat/privacy`: privacy policy. State accurately: chat history and settings are stored locally in the browser; text the user sends is passed through our server to an AI provider to produce the reply; the license key is sent to our server and checked with Polar; we do not sell data; contact details. Mark it as a draft for me to review.
+4. `/smart-chat/privacy`: privacy policy, reachable at exactly this path (it is the URL entered in the Chrome Web Store form, so do not rename it). Mark it as a draft for me to review. State accurately:
+   - Stored locally in the browser (chrome.storage): settings, chat history (last 50 messages), the free-chat counter and, for paying users, the license key. It never leaves the device except as described below.
+   - Sent to our server (hosted on Vercel) when the user sends a message: the message text and the mode instructions. The server passes them to an AI provider (OpenAI, DeepSeek, Anthropic or v0, depending on configuration) and returns the reply. Our server does not store messages. Vercel may keep standard request logs (such as IP address and timestamps), and each AI provider handles the text under its own privacy policy and retention rules; link to them.
+   - The license key is sent to our server on each request and checked with Polar. Polar is the merchant of record and handles payment, so we never see or store card details.
+   - The extension reads page content only when the user clicks Insert, and then only writes the reply into the field they selected. It does not read, record or transmit browsing history or page content.
+   - We do not sell user data, do not use it for advertising or creditworthiness, and do not transfer it except as listed above.
+   - How to clear local data (Clear chat button, or removing the extension), a contact email, and an effective date.
 5. `/smart-chat/terms` and `/smart-chat/refunds`: short, plain drafts for me to review. Say Polar processes payments.
 
 ## Checkout (no secrets in the browser)
