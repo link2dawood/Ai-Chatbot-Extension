@@ -83,3 +83,9 @@ Use these on the dawoodzafar.us pages. Keep to one idea per page.
 - **Meta description (under 155 characters):** `Smart Chat Assistant is a Chrome side-panel AI that rewrites, proofreads, summarizes and explains text without leaving the page. Try it free.`
 - **Headline (h1):** `AI writing and chat, right in your Chrome side panel`
 - Natural phrases to use in headings and text: AI writing assistant, Chrome side panel, rewrite text, grammar checker, summarize text, explain text.
+
+## Image files
+- **Upload the PNGs in `store-assets/out/png/`.** They are 24-bit with no alpha, at the exact sizes the store asks for, and are rendered from the SVG masters. (The JPEGs in `store-assets/out/` are also accepted.)
+- `store-assets/out/svg/` holds the same seven images as editable vector SVGs (no embedded bitmaps, text converted to outlines). The store does not accept SVG uploads.
+- To change something, edit the SVG in Figma, Inkscape or Illustrator and save it back to the same path, then run `node store-assets/make-assets.mjs --png-only` to re-render the PNGs from your edited SVGs.
+- `node store-assets/make-assets.mjs` rebuilds everything from scratch. PNG output needs ImageMagick (`convert`); the SVG step needs `pdftocairo` (poppler-utils).

@@ -11,3 +11,6 @@ node_modules/
 
 # Web Store package output
 dist/
+
+# Store image build scratch
+store-assets/.tmp/
