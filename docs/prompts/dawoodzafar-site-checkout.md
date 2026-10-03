@@ -1,6 +1,6 @@
 # Prompt for the dawoodzafar.us repo
 
-Paste everything below the line into Claude Code, opened in the dawoodzafar.us repository. Before you do, fill in the three `<<...>>` values in the "Facts" section.
+Paste everything below the line into Claude Code, opened in the dawoodzafar.us repository. Before you do, fill in the two `<<...>>` values (Free plan and Chrome Web Store link) in the "Facts" section.
 
 ---
 
