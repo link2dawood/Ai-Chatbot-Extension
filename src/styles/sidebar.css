@@ -142,3 +142,18 @@ body.dark .quota-meter { background: #30342f; }
   .mode-context h1 { font-size: 20px; }
   .quota-row { grid-template-columns: 1fr; gap: 6px; }
 }
+
+.field-label { display: block; margin-top: 12px; color: var(--muted); font-size: 9.5px; font-weight: 650; }
+.select-input { width: 100%; margin-top: 5px; min-height: 34px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); color: var(--ink); padding: 0 9px; font-size: 11px; }
+.settings-card code { font-size: .95em; }
+.provider-results { list-style: none; margin: 8px 0 0; padding: 0; }
+.provider-results:empty { display: none; }
+.provider-result { padding: 9px 0; border-top: 1px solid var(--line); }
+.provider-result-head { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 650; }
+.provider-result-head small { margin-left: auto; color: var(--muted); font-weight: 500; font-size: 9px; font-variant-numeric: tabular-nums; }
+.provider-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); flex: 0 0 auto; }
+.provider-result.ok .provider-dot { background: var(--accent); }
+.provider-result.fail .provider-dot { background: var(--danger); }
+.provider-result p { margin: 3px 0 0 14px !important; font-size: 9.5px !important; overflow-wrap: anywhere; }
+.provider-result .provider-error { color: var(--danger); }
+.provider-tag { color: var(--muted); font-size: 8.5px; font-weight: 700; letter-spacing: .06em; border: 1px solid var(--line); border-radius: 5px; padding: 1px 4px; }

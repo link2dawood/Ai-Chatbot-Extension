@@ -91,9 +91,12 @@
       <div class="settings-card">
         <span class="settings-card-label">AI SERVICE</span>
         <strong>Vercel hosted</strong>
-        <p>The extension connects to your hosted `/api/chat` endpoint. No API key is stored in the browser.</p>
-        <button id="testConnection" class="secondary-button" type="button">Check connection</button>
+        <p>The extension connects to your hosted <code>/api/chat</code> endpoint. API keys stay on Vercel and are never stored in the browser.</p>
+        <label class="field-label" for="providerSelect">Provider</label>
+        <select id="providerSelect" class="select-input"></select>
+        <button id="testConnection" class="secondary-button" type="button">Check all connections</button>
         <p id="settingsStatus" class="settings-status" role="status"></p>
+        <ul id="providerResults" class="provider-results" aria-live="polite"></ul>
       </div>
       <div class="settings-card compact">
         <span class="settings-card-label">FREE PLAN</span>
@@ -105,7 +108,7 @@
         <strong>Local history</strong>
         <p>Conversation history and quota usage are stored locally in the extension.</p>
       </div>
-      <p class="version-note">Smart Chat Assistant · Sidebar edition</p>
+      <p class="version-note">Smart Chat Assistant 2.5 · Sidebar edition</p>
     </div>
   </aside>
 

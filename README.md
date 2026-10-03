@@ -1,4 +1,4 @@
-# Smart Chat Assistant 2.4
+# Smart Chat Assistant 2.5
 
 Chrome Manifest V3 side-panel assistant with Chat, Rewrite, Grammar, Summarize, and Explain modes.
 
@@ -8,14 +8,14 @@ Chrome Manifest V3 side-panel assistant with Chat, Rewrite, Grammar, Summarize, 
 - Chat / Rewrite / Grammar / Summarize / Explain modes
 - Copy, insert into page, clear history, export, light/dark theme
 - Vercel serverless API route at `api/chat.js`
-- OpenAI Responses API integration with the API key kept server-side
-- Health check that verifies both Vercel and OpenAI connectivity
+- Choice of provider: OpenAI, DeepSeek, Anthropic or v0. Keys stay server-side.
+- Connection check that verifies each provider's key, model and billing, and suggests a fix when something fails
 
 ## API architecture
 
-Chrome extension → `https://ai-chatbot-extension.vercel.app/api/chat` → OpenAI Responses API
+Chrome extension → `https://ai-chatbot-extension.vercel.app/api/chat` → OpenAI / DeepSeek / Anthropic / v0
 
-Set `OPENAI_API_KEY` as a Vercel environment variable. Do not put it in `manifest.json`, browser JavaScript, HTML, or committed `.env` files.
+Set one or more of `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, `V0_API_KEY` as Vercel environment variables, then redeploy. See [API-SETUP.md](API-SETUP.md). Never put keys in `manifest.json`, browser JavaScript, HTML or committed `.env` files.
 
 ## Install extension locally
 1. Open `chrome://extensions`.
@@ -25,9 +25,9 @@ Set `OPENAI_API_KEY` as a Vercel environment variable. Do not put it in `manifes
 5. Click the extension icon to open the side panel.
 
 ## Verify connection
-Open Settings and click **Check connection**. Version 2.4 reports success only when the hosted Vercel function can also authenticate to OpenAI.
+Open Settings, pick a provider (or Auto), and click **Check connection**. Each provider is reported as Verified, Failed (with the reason and a fix) or Not set.
 
 
 ## Debug logging
 
-Version 2.4 logs API failures to the sidebar DevTools console and logs upstream OpenAI failures in Vercel Functions logs. Secret keys are never logged.
+API failures are logged to the sidebar DevTools console, and upstream provider failures are logged in Vercel Functions logs. Secret keys are never logged.

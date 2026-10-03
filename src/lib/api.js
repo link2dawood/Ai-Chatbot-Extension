@@ -1,12 +1,25 @@
 export const API_ENDPOINT = "https://ai-chatbot-extension.vercel.app/api/chat";
 
-export async function sendAssistantRequest({ prompt, system, signal }) {
-  const response = await fetch(API_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, system }),
-    signal
-  });
+export const PROVIDER_OPTIONS = [
+  { id: "auto", label: "Auto (server default)" },
+  { id: "openai", label: "OpenAI" },
+  { id: "deepseek", label: "DeepSeek" },
+  { id: "anthropic", label: "Anthropic" },
+  { id: "v0", label: "v0" }
+];
+
+export async function sendAssistantRequest({ prompt, system, provider, signal }) {
+  let response;
+  try {
+    response = await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, system, provider: provider || "auto" }),
+      signal
+    });
+  } catch (cause) {
+    throw unreachable(cause);
+  }
 
   let data = null;
   try { data = await response.json(); } catch { data = null; }
@@ -18,33 +31,50 @@ export async function sendAssistantRequest({ prompt, system, signal }) {
       statusText: response.statusText,
       response: data
     });
-    const detail = data?.upstreamCode ? ` [${data.upstreamCode}]` : "";
-    const error = new Error(`${data?.error || `Request failed (${response.status}).`}${detail}`);
+    const error = new Error(data?.error || `Request failed (${response.status}).`);
     error.status = response.status;
     error.upstreamStatus = data?.upstreamStatus || response.status;
     error.upstreamCode = data?.upstreamCode || null;
     error.provider = data?.provider || null;
+    error.hint = data?.hint || null;
     error.retryAfter = response.headers.get("retry-after");
     throw error;
   }
 
   const text = data?.text?.trim();
   if (!text) throw new Error("The assistant returned an empty response.");
-  return { text, usage: data?.usage || null, rateLimit: data?.rateLimit || null };
+  return { text, usage: data?.usage || null, provider: data?.provider || null, model: data?.model || null };
 }
 
-export async function pingAssistant() {
-  const response = await fetch(API_ENDPOINT, { method: "GET" });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    console.error("[Smart Chat] Connection check failed", {
-      endpoint: API_ENDPOINT,
-      status: response.status,
-      statusText: response.statusText,
-      response: data
-    });
-    const detail = data?.upstreamCode ? ` [${data.upstreamCode}]` : "";
-    throw new Error(`${data?.error || `Service check failed (${response.status}).`}${detail}`);
+// Returns the server's per-provider report:
+// { ok, defaultProvider, providers: { openai: { ok, configured, model, error, hint, ... }, ... } }
+// A 503 still carries the report (it means no provider passed), so it is returned, not thrown.
+export async function checkProviders({ provider, verify = true } = {}) {
+  const url = new URL(API_ENDPOINT);
+  if (provider && provider !== "auto") url.searchParams.set("provider", provider);
+  if (verify) url.searchParams.set("verify", "1");
+
+  let response;
+  try {
+    response = await fetch(url, { method: "GET" });
+  } catch (cause) {
+    throw unreachable(cause);
   }
-  return data;
+  const data = await response.json().catch(() => null);
+  if (data?.providers) return data;
+
+  console.error("[Smart Chat] Connection check failed", {
+    endpoint: API_ENDPOINT,
+    status: response.status,
+    statusText: response.statusText,
+    response: data
+  });
+  throw new Error(data?.error || `Service check failed (${response.status}). Is the latest api/chat.js deployed?`);
+}
+
+function unreachable(cause) {
+  const error = new Error(`Could not reach ${new URL(API_ENDPOINT).host}. Check your internet connection, and that API_ENDPOINT in src/lib/api.js and host_permissions in manifest.json match your Vercel deployment.`);
+  error.status = 0;
+  error.cause = cause;
+  return error;
 }

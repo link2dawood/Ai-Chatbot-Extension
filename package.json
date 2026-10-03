@@ -1,10 +1,16 @@
 {
   "name": "smart-chat-assistant",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node --check background.js && node --check src/scripts/sidebar.js && node --check src/lib/api.js && node --check src/lib/markdown.js && node --check api/chat.js",
+    "lint": "node --check background.js && node --check src/scripts/sidebar.js && node --check src/lib/api.js && node --check src/lib/markdown.js && node --check server/providers.js && node --check api/chat.js",
     "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }
