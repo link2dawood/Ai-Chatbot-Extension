@@ -1,0 +1,43 @@
+# Prompt for the dawoodzafar.us repo
+
+Paste everything below the line into Claude Code, opened in the dawoodzafar.us repository. Before you do, fill in the three `<<...>>` values in the "Facts" section.
+
+---
+
+You are working in the repository for https://dawoodzafar.us/. Add a product section for my Chrome extension **Smart Chat Assistant**, with a pricing page and checkout through **Polar** (https://polar.sh). Work on a new branch called `feature/smart-chat-pricing`. Do not push to the main branch and do not open a pull request.
+
+## Step 0: learn the repo first
+Before writing anything, inspect the repo: framework and version, language (TypeScript or JavaScript), router, styling system, component library, layout and navigation, how pages are added, how environment variables are read, and how it is deployed. Follow its existing conventions exactly. Do not add a new framework, UI library or heavy dependency. Tell me in a few lines what you found, then continue.
+
+## Facts
+- Product: Smart Chat Assistant, a Chrome side-panel extension with five modes: Chat, Rewrite, Grammar, Summarize and Explain.
+- Plans:
+  - **Free**: <<describe the free plan, for example "10 chats on a small model">>.
+  - **Pro**: <<price and period, for example "$5 per month">>. Includes access to the hosted AI models. The customer gets a **license key** by email after buying and pastes it into the extension under Settings → Paid plan.
+- Payments: Polar is the merchant of record, so it handles payment and tax. Never collect card details on this site.
+- Polar organization slug: `dawood-zafar`. Customer portal: `https://polar.sh/dawood-zafar/portal`. Confirm that link pattern works, and if it does not, make it a single configurable value.
+- Chrome Web Store link: <<URL, or leave as a configurable placeholder until the listing exists>>.
+- Support email: dawood.dixeam@gmail.com
+
+## Build these pages (match the site's design, fully responsive, accessible)
+1. `/smart-chat`: product landing page. Hero with the one-line value, the five modes as short cards, how it works in three steps (install, open the side panel, use it), a pricing summary, an FAQ, and a call to action.
+2. `/smart-chat/pricing`: Free and Pro side by side. The Pro button goes to checkout (see below). Add a "Manage or cancel subscription" link to the customer portal and a "Have a license key?" help link.
+3. `/smart-chat/success`: the page buyers land on after paying. Explain: (1) check your email for the license key from Polar, (2) open the extension → Settings → Paid plan, (3) paste the key and press Save and verify. Include the customer portal link for finding the key again and a support email link. Do not show or accept a license key on this page.
+4. `/smart-chat/privacy`: privacy policy. State accurately: chat history and settings are stored locally in the browser; text the user sends is passed through our server to an AI provider to produce the reply; the license key is sent to our server and checked with Polar; we do not sell data; contact details. Mark it as a draft for me to review.
+5. `/smart-chat/terms` and `/smart-chat/refunds`: short, plain drafts for me to review. Say Polar processes payments.
+
+## Checkout (no secrets in the browser)
+- Phase 1, do this now: the Pro button is a normal link to the Polar **checkout link** URL. Read it from one environment variable (use the repo's convention for a public variable, for example `NEXT_PUBLIC_POLAR_CHECKOUT_URL`). If the variable is empty, show a disabled "Coming soon" button instead of a broken link.
+- The Polar checkout link's success URL is set in the Polar dashboard to `https://dawoodzafar.us/smart-chat/success`. Document this in the README.
+- Add a `NEXT_PUBLIC_POLAR_CUSTOMER_PORTAL_URL`-style variable for the portal link, with the default above.
+- Do not add the Polar access token, webhook secret or any secret to this repo. If you think a server-side checkout is needed, explain why and stop; do not build it.
+
+## Quality
+- Each page has a proper title, meta description, Open Graph tags and a canonical URL. Add the pages to the sitemap if the site has one, and to the navigation or footer in the way that fits the site.
+- Use real, specific copy based on the facts above. Do not invent features, testimonials, user counts or ratings. Do not mention features I did not list.
+- No placeholder lorem ipsum. Any value I must supply stays as a clearly named configurable constant or environment variable in one place.
+- Add `.env.example` entries and a short README section: which variables to set, how to set them in the hosting provider, and the two Polar dashboard steps (checkout link success URL, and License Keys benefit on the product).
+- Run the repo's lint, type check and build, fix what fails, and show me the results. If the repo has tests, add a simple one for the pricing page's button states (link when the variable is set, disabled when empty).
+- Commit in small logical commits on `feature/smart-chat-pricing`.
+
+When done, give me: a list of the files you added or changed, the exact environment variables to set, the local URLs to preview each page, and anything you were unsure about.
