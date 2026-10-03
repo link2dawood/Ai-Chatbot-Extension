@@ -67,7 +67,7 @@ test("health check lists every provider and reports missing keys", async () => {
 test("OpenAI check verifies the model, then sends a test request", async () => {
   process.env.OPENAI_API_KEY = "sk-proj-abc";
   stubFetch([
-    [url => url === "https://api.openai.com/v1/models/gpt-5-mini", () => json(200, { id: "gpt-5-mini" })],
+    [url => url === "https://api.openai.com/v1/models/gpt-5-nano", () => json(200, { id: "gpt-5-mini" })],
     [url => url === "https://api.openai.com/v1/responses", () => json(200, { status: "incomplete", output: [] })]
   ]);
   const res = await call({ method: "GET", query: { provider: "openai", verify: "1" } });
@@ -110,6 +110,7 @@ test("DeepSeek verify surfaces insufficient balance (402)", async () => {
 
 test("Anthropic check uses the SDK headers and retrieves the model", async () => {
   process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+  process.env.ANTHROPIC_MODEL = "claude-opus-5-5";
   stubFetch([
     [url => url.startsWith("https://api.anthropic.com/v1/models/claude-opus-5-5"), () => json(200, { id: "claude-opus-5-5", type: "model" })],
     [url => url.startsWith("https://api.anthropic.com/v1/messages"), (url, init) => {
@@ -212,4 +213,19 @@ test("keys are cleaned and misplaced keys are detected", () => {
   assert.match(detectKeyMismatch("openai", FAKE_DEEPSEEK_KEY), /DeepSeek/);
   assert.match(detectKeyMismatch("deepseek", "sk-proj-123"), /OpenAI/);
   assert.equal(detectKeyMismatch("anthropic", "sk-ant-123"), null);
+});
+
+test("Anthropic defaults to Haiku and omits effort and fallbacks it does not support", async () => {
+  process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+  process.env.ANTHROPIC_EFFORT = "high";
+  stubFetch([[url => url.startsWith("https://api.anthropic.com/v1/messages"), (url, init) => {
+    const body = JSON.parse(init.body);
+    assert.equal(body.model, "claude-haiku-4-5");
+    assert.equal(body.fallbacks, undefined);
+    assert.equal(body.output_config, undefined);
+    return json(200, { id: "msg_1", type: "message", role: "assistant", model: "claude-haiku-4-5", content: [{ type: "text", text: "Hi" }], stop_reason: "end_turn", usage: { input_tokens: 5, output_tokens: 1 } });
+  }]]);
+  const res = await call({ method: "POST", body: { prompt: "hello", provider: "anthropic" } });
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.text, "Hi");
 });
