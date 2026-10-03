@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node --check background.js && node --check src/scripts/sidebar.js && node --check src/lib/api.js && node --check src/lib/markdown.js && node --check server/providers.js && node --check api/chat.js",
+    "lint": "node --check background.js && node --check src/scripts/sidebar.js && node --check src/lib/api.js && node --check src/lib/markdown.js && node --check src/lib/prompts.js && node --check server/providers.js && node --check server/entitlement.js && node --check api/chat.js",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {

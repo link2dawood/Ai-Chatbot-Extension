@@ -13,6 +13,8 @@ Smart Chat Assistant 2.5 is a Chrome Manifest V3 side-panel extension with a Ver
 - `assets/`: icons and artwork.
 - `api/chat.js`: Vercel function (health check and chat routing).
 - `server/providers.js`: OpenAI, DeepSeek, Anthropic and v0 adapters, connection checks and error hints.
+- `server/entitlement.js`: Polar license-key check for paid-only access.
+- `src/lib/prompts.js`: system prompt for each mode. `examples/payloads.json` holds sample API payloads built from them.
 - `tests/`: renderer and provider/backend tests (network calls are stubbed).
 
 ## Local development

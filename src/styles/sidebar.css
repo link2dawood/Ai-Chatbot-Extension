@@ -157,3 +157,7 @@ body.dark .quota-meter { background: #30342f; }
 .provider-result p { margin: 3px 0 0 14px !important; font-size: 9.5px !important; overflow-wrap: anywhere; }
 .provider-result .provider-error { color: var(--danger); }
 .provider-tag { color: var(--muted); font-size: 8.5px; font-weight: 700; letter-spacing: .06em; border: 1px solid var(--line); border-radius: 5px; padding: 1px 4px; }
+
+.text-input { width: 100%; margin-top: 10px; min-height: 34px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); color: var(--ink); padding: 0 9px; font-size: 11px; }
+.upgrade-link { display: inline-block; margin-top: 8px; color: var(--accent); font-size: 10px; font-weight: 650; }
+.upgrade-link[hidden] { display: none; }

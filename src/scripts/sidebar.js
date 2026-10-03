@@ -1,4 +1,5 @@
 import { renderMarkdown } from "../lib/markdown.js";
+import { MODE_PROMPTS } from "../lib/prompts.js";
 import { sendAssistantRequest, checkProviders, PROVIDER_OPTIONS } from "../lib/api.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -11,7 +12,7 @@ const MODES = {
     title: "What can I help with?",
     description: "Ask a question or work through something without leaving the page.",
     placeholder: "Ask anything…",
-    system: "Be a concise, practical assistant. Use natural language, answer directly, and avoid filler.",
+    system: MODE_PROMPTS.chat,
     starters: [
       ["Draft a reply", "Help me write a clear reply to this message: "],
       ["Make a plan", "Turn this into a simple action plan: "],
@@ -23,7 +24,7 @@ const MODES = {
     title: "Make it sound better.",
     description: "Improve clarity, tone and flow while keeping the original meaning.",
     placeholder: "Paste text to rewrite…",
-    system: "Rewrite the user's text for clarity, flow, tone, and professionalism while preserving meaning. Return only the rewritten text unless necessary context is missing.",
+    system: MODE_PROMPTS.rewrite,
     starters: [
       ["Professional", "Rewrite this to sound professional and natural: "],
       ["Friendly", "Rewrite this to sound warm and friendly: "],
@@ -35,7 +36,7 @@ const MODES = {
     title: "Clean up the writing.",
     description: "Fix grammar, spelling and punctuation without changing your voice.",
     placeholder: "Paste text to correct…",
-    system: "Correct grammar, spelling, punctuation, and awkward phrasing while preserving the user's tone and meaning. Return only the corrected text.",
+    system: MODE_PROMPTS.grammar,
     starters: [
       ["Fix grammar", "Correct the grammar in this text without changing my tone: "],
       ["Polish wording", "Fix grammar and smooth any awkward wording: "],
@@ -47,7 +48,7 @@ const MODES = {
     title: "Pull out what matters.",
     description: "Turn long text into a concise summary you can scan quickly.",
     placeholder: "Paste text to summarize…",
-    system: "Summarize the user's text accurately and concisely. Use short bullets when helpful and preserve important names, dates, numbers, and decisions.",
+    system: MODE_PROMPTS.summarize,
     starters: [
       ["5 bullets", "Summarize this in 5 concise bullets: "],
       ["Key takeaways", "Give me the key takeaways from this: "],
@@ -59,7 +60,7 @@ const MODES = {
     title: "Make it easier to understand.",
     description: "Break down confusing text or ideas in plain language.",
     placeholder: "Paste or ask what to explain…",
-    system: "Explain the user's text or question in plain language. Be concrete, use simple examples when useful, and avoid unnecessary jargon.",
+    system: MODE_PROMPTS.explain,
     starters: [
       ["Simple terms", "Explain this in simple terms: "],
       ["Step by step", "Explain this step by step: "],
@@ -68,7 +69,7 @@ const MODES = {
   }
 };
 
-const DEFAULT_SETTINGS = { theme: "light", mode: "chat", provider: "auto" };
+const DEFAULT_SETTINGS = { theme: "light", mode: "chat", provider: "auto", licenseKey: "" };
 let settings = { ...DEFAULT_SETTINGS };
 let history = [];
 let freeChatsUsed = 0;
@@ -129,6 +130,7 @@ function bindEvents() {
   $("#settingsClose").addEventListener("click", closeSettings);
   $("#themeToggle").addEventListener("click", toggleTheme);
   $("#testConnection").addEventListener("click", testConnection);
+  $("#saveLicense").addEventListener("click", saveLicense);
   providerSelect.addEventListener("change", async () => {
     settings.provider = providerSelect.value;
     await persistSettings();
@@ -161,6 +163,7 @@ function applySettingsToUI() {
   if (!PROVIDER_OPTIONS.some(option => option.id === settings.provider)) settings.provider = "auto";
   providerSelect.value = settings.provider;
   updateConnectionButton();
+  $("#licenseInput").value = settings.licenseKey || "";
   connectionLabel.textContent = "Ready";
 }
 
@@ -219,6 +222,38 @@ function closeSettings() {
   settingsPanel.setAttribute("aria-hidden", "true");
 }
 
+function setLicenseStatus(message, type) {
+  const el = $("#licenseStatus");
+  el.textContent = message;
+  el.className = `settings-status${type ? ` ${type}` : ""}`;
+}
+
+function showUpgrade(url) {
+  const link = $("#upgradeLink");
+  if (url) link.href = url;
+  link.hidden = !url;
+}
+
+async function saveLicense() {
+  const button = $("#saveLicense");
+  settings.licenseKey = $("#licenseInput").value.trim();
+  await persistSettings();
+  if (!settings.licenseKey) return setLicenseStatus("License removed.", "");
+  button.disabled = true;
+  setLicenseStatus("Verifying…", "");
+  try {
+    // The unverified health check reports whether this license is accepted.
+    const report = await checkProviders({ verify: false, licenseKey: settings.licenseKey });
+    if (!report.gated) setLicenseStatus("Paid gating is off on this server; every user has access.", "");
+    else if (report.entitled) setLicenseStatus("License verified. Paid access is active.", "success");
+    else setLicenseStatus("That license was not accepted. Check the key, or that the subscription is active.", "error");
+  } catch (error) {
+    setLicenseStatus(error.message, "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function testConnection() {
   const button = $("#testConnection");
   const list = $("#providerResults");
@@ -227,7 +262,7 @@ async function testConnection() {
   list.innerHTML = "";
   setSettingsStatus("Checking keys and sending a small test request…", "");
   try {
-    const report = await checkProviders({ provider: settings.provider, verify: true });
+    const report = await checkProviders({ provider: settings.provider, verify: true, licenseKey: settings.licenseKey });
     const results = Object.values(report.providers);
     list.innerHTML = results.map(renderProviderResult).join("");
 
@@ -353,7 +388,7 @@ async function sendCurrentMessage() {
 
   try {
     const mode = MODES[settings.mode] || MODES.chat;
-    const result = await sendAssistantRequest({ prompt: text, system: mode.system, provider: settings.provider });
+    const result = await sendAssistantRequest({ prompt: text, system: mode.system, provider: settings.provider, licenseKey: settings.licenseKey });
     removeTyping();
     lastAssistantText = result.text;
     history.push({ role: "assistant", text: result.text, at: Date.now() });
@@ -385,6 +420,10 @@ async function sendCurrentMessage() {
 }
 
 function friendlyError(error) {
+  if (error.code === "paid_required" || String(error.code || "").startsWith("license_")) {
+    showUpgrade(error.upgradeUrl);
+    return error.message;
+  }
   const name = error.provider ? providerLabel(error.provider) : "The AI service";
   if (error.status === 0) return error.message;
   if (error.status === 429 && !error.hint) {

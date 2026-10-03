@@ -7,16 +7,23 @@
 //                                (provider omitted or "auto" → AI_PROVIDER, else the first configured).
 //
 // Keys live only in Vercel environment variables; see server/providers.js.
+//
+// When POLAR_ORGANIZATION_ID is set, the server-side providers are for paid
+// users only: POST needs a valid Polar license key in the X-License-Key
+// header, and GET ?verify=1 (which spends tokens) needs one too. See
+// server/entitlement.js.
 
 import { PROVIDERS, PROVIDER_IDS, ProviderError, checkProvider, generate, isConfigured, resolveProvider } from "../server/providers.js";
+import { denial, entitlementFor } from "../server/entitlement.js";
 
 const MAX_PROMPT = 6000;
+const MAX_SYSTEM = 4000;
 const DEFAULT_SYSTEM = "Be concise, practical, and natural.";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Client-Id");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Client-Id, X-License-Key");
   res.setHeader("Cache-Control", "no-store");
 }
 
@@ -32,7 +39,11 @@ function queryParam(req, name) {
 
 async function handleHealth(req, res) {
   const requested = String(queryParam(req, "provider") || "").toLowerCase();
-  const verify = ["1", "true", "yes"].includes(String(queryParam(req, "verify") || "").toLowerCase());
+  let verify = ["1", "true", "yes"].includes(String(queryParam(req, "verify") || "").toLowerCase());
+  // A verified check sends a real request to each provider, which costs tokens
+  // on your keys, so when gating is on only paid users may run it.
+  const entitlement = await entitlementFor(req);
+  if (verify && !entitlement.entitled) verify = false;
   if (requested && !PROVIDERS[requested]) {
     return send(res, 400, { ok: false, vercel: true, error: `Unknown provider "${requested}". Use one of: ${PROVIDER_IDS.join(", ")}.` });
   }
@@ -47,6 +58,8 @@ async function handleHealth(req, res) {
     ok,
     vercel: true,
     verified: verify,
+    gated: entitlement.gated,
+    entitled: entitlement.entitled,
     defaultProvider,
     providers,
     error: ok ? null : (requested ? results[0].error : "No AI provider is connected. Add at least one API key on Vercel and redeploy.")
@@ -59,6 +72,13 @@ async function handleChat(req, res) {
   const requested = typeof req.body?.provider === "string" ? req.body.provider.trim().toLowerCase() : "auto";
   if (!prompt) return send(res, 400, { ok: false, error: "Prompt is required." });
   if (prompt.length > MAX_PROMPT) return send(res, 413, { ok: false, error: "Prompt is too long." });
+  if (system.length > MAX_SYSTEM) return send(res, 413, { ok: false, error: "System prompt is too long." });
+
+  const entitlement = await entitlementFor(req);
+  if (!entitlement.entitled) {
+    const { status, body } = denial(entitlement.reason);
+    return send(res, status, body);
+  }
 
   let provider = null;
   try {
