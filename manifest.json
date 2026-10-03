@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Smart Chat Assistant",
+  "name": "Smart Chat Assistant: AI Writing & Chat",
   "version": "2.5.0",
-  "description": "A focused writing and chat assistant for Chrome's side panel.",
+  "description": "AI writing assistant in your side panel. Chat, rewrite, fix grammar, summarize and explain text without leaving the page.",
   "minimum_chrome_version": "114",
   "permissions": [
     "sidePanel",
