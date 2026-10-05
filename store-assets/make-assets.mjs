@@ -69,17 +69,17 @@ const SHOTS = {
       "Rewrite this to sound professional and natural: hey, just checking if u got my email abt the invoice, need it paid asap thx",
       "Hello, I wanted to check that you received my email about the invoice. Could you please arrange payment at your earliest convenience? Thank you."
     ),
-    headline: "Rewrite any text<br>in one click",
-    sub: "Clearer, friendlier or more professional, with your meaning, names and numbers kept."
+    headline: "Say what you mean,<br>your way",
+    sub: "Pick what the message should do (decline, follow up, apologize) and keep your meaning."
   },
-  grammar: {
-    settings: { theme: "light", mode: "grammar" },
+  reply: {
+    settings: { theme: "light", mode: "reply" },
     history: turn(
-      "Correct the grammar in this text without changing my tone: me and him goes to the market yesterday and buyed some apple.",
-      "He and I went to the market yesterday and bought some apples."
+      "We're not sure we can move forward with this right now.",
+      "**Professional**\nI completely understand. If there are any concerns I can address, I'd be happy to discuss them.\n\n**Persuasive**\nUnderstood. Would it be helpful if I shared a revised proposal that addresses the main concerns?\n\n**Short**\nUnderstood. Please let me know if anything changes.\n\n**Friendly**\nNo worries at all. If anything changes, just let me know."
     ),
-    headline: "Fix grammar and<br>keep your voice",
-    sub: "Spelling, grammar and punctuation corrected with a light touch."
+    headline: "Know what to<br>say back",
+    sub: "Select a message and get four ready-to-send replies."
   },
   summarize: {
     settings: { theme: "light", mode: "summarize" },
@@ -149,7 +149,7 @@ function promoSmallHtml() {
     <img src="${LOGO}" style="position:absolute;left:30px;top:30px;width:64px;height:64px">
     <div style="position:absolute;left:30px;top:116px;font-size:34px;line-height:1.1;font-weight:700;color:#fff;letter-spacing:-.5px">Smart Chat<br>Assistant</div>
     <div style="position:absolute;left:30px;top:200px;font-size:17px;color:#d6e6e0">AI writing and chat in your side panel</div>
-    <div style="position:absolute;left:30px;bottom:18px;display:flex;gap:6px;font-size:11px;color:#fff">${["Chat", "Rewrite", "Grammar", "Summarize", "Explain"].map(t => `<span style="padding:3px 8px;border:1px solid rgba(255,255,255,.45);border-radius:99px">${t}</span>`).join("")}</div>
+    <div style="position:absolute;left:30px;bottom:18px;display:flex;gap:6px;font-size:11px;color:#fff">${["Chat", "Reply", "Rewrite", "Grammar", "Summarize", "Explain"].map(t => `<span style="padding:3px 8px;border:1px solid rgba(255,255,255,.45);border-radius:99px">${t}</span>`).join("")}</div>
   </body>`;
 }
 
@@ -158,8 +158,8 @@ function marqueeHtml() {
   return `<!doctype html><meta charset="utf-8"><body style="margin:0;width:1400px;height:560px;background:linear-gradient(120deg,#2b5348,#3f6f63 55%,#5b8a7d);font-family:${FONT};position:relative;overflow:hidden">
     <img src="${LOGO}" style="position:absolute;left:80px;top:78px;width:72px;height:72px">
     <div style="position:absolute;left:80px;top:178px;width:760px;font-size:64px;line-height:1.05;font-weight:700;letter-spacing:-2px;color:#fff">AI writing and chat<br>in your side panel</div>
-    <div style="position:absolute;left:80px;top:370px;font-size:26px;color:#d6e6e0;width:700px;line-height:1.4">Rewrite, proofread, summarize and explain text without leaving the page.</div>
-    <div style="position:absolute;left:80px;bottom:56px;display:flex;gap:10px;font-size:18px;color:#fff">${["Chat", "Rewrite", "Grammar", "Summarize", "Explain"].map(t => `<span style="padding:6px 16px;border:1.5px solid rgba(255,255,255,.5);border-radius:99px">${t}</span>`).join("")}</div>
+    <div style="position:absolute;left:80px;top:370px;font-size:26px;color:#d6e6e0;width:700px;line-height:1.4">Reply, rewrite, proofread and summarize without leaving the page.</div>
+    <div style="position:absolute;left:80px;bottom:56px;display:flex;gap:10px;font-size:18px;color:#fff">${["Chat", "Reply", "Rewrite", "Grammar", "Summarize", "Explain"].map(t => `<span style="padding:6px 16px;border:1.5px solid rgba(255,255,255,.5);border-radius:99px">${t}</span>`).join("")}</div>
     <div style="position:absolute;right:110px;top:48px;transform:rotate(0deg)">${panelFrame(shot, { width: 380, height: 700 })}</div>
   </body>`;
 }
@@ -172,7 +172,8 @@ async function render(html, width, height, file, { vector = true } = {}) {
     const raw = decodeURIComponent(location.hash.slice(1) || "");
     let state = {};
     try { state = raw ? JSON.parse(raw) : {}; } catch { state = {}; }
-    window.chrome = { storage: { local: { get: (keys, cb) => cb(state), set: (data, cb) => cb && cb() } }, tabs: {}, scripting: {} };
+    if (!crypto.randomUUID) crypto.randomUUID = () => "00000000-0000-4000-8000-000000000000"; // frames of an about:blank page are not a secure context
+    window.chrome = { storage: { local: { get: (keys, cb) => cb(state), set: (data, cb) => cb && cb(), remove: (key, cb) => cb && cb() } }, runtime: { getManifest: () => ({ version: "2.7.0" }) }, permissions: { contains: async () => false, request: async () => false }, tabs: {}, scripting: {} };
   });
   const page = await context.newPage();
   await page.setContent(html);

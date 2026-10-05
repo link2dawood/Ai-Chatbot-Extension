@@ -17,7 +17,7 @@ html, body { margin: 0; min-width: 300px; height: 100%; }
 body { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); font-size: 13px; }
 button, input, textarea, select { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
-.app-shell { min-height: 100vh; height: 100vh; display: grid; grid-template-rows: auto auto auto auto minmax(0,1fr) auto; }
+.app-shell { min-height: 100vh; height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0,1fr) auto; }
 
 .topbar { min-height: 64px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: rgba(245,245,242,.94); backdrop-filter: blur(14px); }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -200,8 +200,10 @@ body.dark .quota-meter { background: #30342f; }
 .mini-button[hidden], .plan-btn[hidden] { display: none; }
 .attach-note { flex-basis: 100%; color: var(--muted); font-size: 9.5px; }
 
-.intent-row { padding: 0 14px 8px; }
+.intent-row { padding: 10px 0 2px; }
 .intent-row[hidden] { display: none; }
-.intent-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 8px; }
-.intent-chip { border: 1px solid var(--line-strong); background: var(--surface); color: inherit; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.intent-chips { display: flex; flex-wrap: nowrap; gap: 6px; padding-bottom: 8px; overflow-x: auto; scrollbar-width: thin; }
+.intent-chip { flex: 0 0 auto; white-space: nowrap; border: 1px solid var(--line-strong); background: var(--surface); color: inherit; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
 .intent-chip.is-on { background: var(--accent, #1f6f50); border-color: var(--accent, #1f6f50); color: #fff; }
+.in-chat .mode-context { padding-top: 10px; }
+.in-chat .mode-context-copy { display: none; }

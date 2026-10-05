@@ -18,11 +18,12 @@ This is the `description` in `manifest.json`. It is the line shown under the nam
 ```
 Smart Chat Assistant is an AI writing and chat assistant that lives in Chrome's side panel. Ask a question, or paste text and get it rewritten, proofread, summarized or explained, while the page you are working on stays open next to it. No tab switching, no copy and paste between windows.
 
-FIVE MODES FOR EVERYDAY WRITING
+SIX MODES FOR EVERYDAY WRITING
 - Chat: ask questions, brainstorm ideas, draft replies and make quick plans.
 - Reply ("What should I say?"): select a message you received and get four ready-to-send replies: professional, persuasive, short and friendly.
 - My writing profile: set your tone, sentence length and words to avoid, or let it learn your style from examples; Rewrite and Reply then sound like you.
 - Rewrite: choose what the message should do (agree, decline, follow up, apologize, escalate and more), or make your text clearer, more professional or friendlier, or shorter, while keeping your meaning, names, numbers and dates.
+- Reply options: reply, reply and ask a question, reply and follow up, or reply and close. Select a whole email thread and it answers the latest message in context.
 - Grammar: fix spelling, grammar and punctuation with a light touch that keeps your own voice.
 - Summarize: turn long text, articles or email threads into short bullets or a paragraph.
 - Explain: get confusing text or ideas explained in plain language, with examples.
@@ -43,7 +44,7 @@ SIMPLE AND PRIVATE
 - Your message is sent through our server to an AI provider to produce the answer. Read the privacy policy for details: https://dawoodzafar.us/smart-chat/privacy
 
 PRICING
-Try it free with 10 chats. Premium Access is $2 per month and unlocks the hosted AI models. Cancel any time.
+Free: 10 messages a day. Premium Access is $2 per month: 500 messages a month, 30 premium requests on a stronger AI model, and attachments (images, PDFs and text files). Prefer your own account? Add your own OpenAI, DeepSeek or Anthropic key in Settings. Cancel any time.
 
 WHO IT IS FOR
 Students, professionals, writers, job seekers, support teams and anyone who writes emails, messages and documents and wants a faster, cleaner draft.
@@ -91,6 +92,15 @@ Use these on the dawoodzafar.us pages. Keep to one idea per page.
 - `store-assets/out/svg/` holds the same seven images as editable vector SVGs (no embedded bitmaps, text converted to outlines). The store does not accept SVG uploads.
 - To change something, edit the SVG in Figma, Inkscape or Illustrator and save it back to the same path, then run `node store-assets/make-assets.mjs --png-only` to re-render the PNGs from your edited SVGs.
 - `node store-assets/make-assets.mjs` rebuilds everything from scratch. PNG output needs ImageMagick (`convert`); the SVG step needs `pdftocairo` (poppler-utils).
+
+## Version 2.7: what to do in the store form
+2.7.0 is the first release that is fully driven by the server: plans, limits, prices, prompts and the upgrade link come from `GET /api/chat?config=1`, so those can change later with no new submission. It also adds Reply ("What should I say?") with reply options, rewrite intents, "My writing profile" and "Learn my style".
+- **Permissions:** unchanged from 2.6 (the three optional host permissions for own API keys). No new permissions. Reply's "Use selection" uses the existing `activeTab` + `scripting`.
+- **Remote code:** the server only sends data (text, numbers, https links). Nothing is executed. If the form asks, say so: all behaviour is in the package; the server provides settings and text.
+- **Storage justification:** add "the user's optional writing profile (tone and style preferences) and the last settings received from our server".
+- **Data usage / privacy page:** add that a short plain-text writing profile (if the user turns it on) is sent with Rewrite and Reply requests, and that "Learn my style" sends the pasted writing samples to our server and AI provider to describe the style. Not stored by us.
+- **Screenshots:** regenerate with `node store-assets/make-assets.mjs` (they already show the 2.7 panel) and upload the PNGs.
+- **Before submitting:** decide the permanent API domain. `API_ENDPOINT` in `src/lib/api.js` and `host_permissions` in `manifest.json` are the only backend coupling; changing them later needs a new submission.
 
 ## Version 2.6: changes to make in the store form
 Version 2.6 lets users add their own API key. It adds three **optional** host permissions (`api.openai.com`, `api.deepseek.com`, `api.anthropic.com`), which Chrome asks the user for only when they add a key for that provider. Upload it as an update after the current version is approved, and update these:
