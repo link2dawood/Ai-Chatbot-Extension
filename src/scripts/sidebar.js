@@ -19,6 +19,17 @@ const MODES = {
       ["Brainstorm", "Give me practical ideas for: "]
     ]
   },
+  reply: {
+    kicker: "WHAT SHOULD I SAY?",
+    title: "Know what to say back.",
+    description: "Paste or select a message you received and get four ready-to-send replies.",
+    placeholder: "Paste the message you received…",
+    starters: [
+      ["Decline politely", "Reply to this message and decline politely: "],
+      ["Push back", "Reply to this message and disagree respectfully: "],
+      ["Say yes", "Reply to this message and agree: "]
+    ]
+  },
   rewrite: {
     kicker: "REWRITE",
     title: "Make it sound better.",
@@ -165,6 +176,7 @@ function bindEvents() {
   $("#intentCustom").addEventListener("input", () => {
     if ($("#intentCustom").value && intentId) { intentId = ""; renderIntents(); }
   });
+  $("#selectionBtn").addEventListener("click", useSelection);
   $("#clearBtn").addEventListener("click", clearChat);
   $("#exportBtn").addEventListener("click", exportChat);
 }
@@ -225,6 +237,7 @@ function updateModeUI() {
   $("#modeDescription").textContent = mode.description;
   inputText.placeholder = mode.placeholder;
   renderIntents();
+  $("#selectionBtn").hidden = settings.mode !== "reply";
   if (!history.length) renderEmptyState();
 }
 
@@ -789,6 +802,22 @@ async function insertLastReply() {
     toast(results?.[0]?.result ? "Inserted into page" : "Click a text field on the page first");
   } catch {
     toast("Chrome blocked insertion on this page");
+  }
+}
+
+// Puts the text selected on the page into the box, so a received message can be answered in one click.
+async function useSelection() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: () => String(window.getSelection() || "").trim() });
+    const text = String(results?.[0]?.result || "").slice(0, 6000);
+    if (!text) return toast("Select a message on the page first");
+    inputText.value = text;
+    autoSizeInput();
+    updateComposer();
+    inputText.focus();
+  } catch {
+    toast("Chrome blocked reading the selection on this page");
   }
 }
 

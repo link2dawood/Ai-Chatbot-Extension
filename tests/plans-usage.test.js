@@ -333,7 +333,7 @@ test("config: plans, limits, copy, prompts and switches come from the environmen
   assert.deepEqual(c.plans.pro, { name: "Premium Access", price: "$2/month", period: "month", limit: 500, premiumLimit: 30,
     perks: ["500 AI messages per month", "30 premium (Claude) requests per month", "Attach images, PDFs and text files"] });
   assert.deepEqual(c.features, { attachments: true, ownKey: true, premium: true });
-  assert.deepEqual(Object.keys(c.modes).sort(), ["chat", "explain", "grammar", "rewrite", "summarize"]);
+  assert.deepEqual(Object.keys(c.modes).sort(), ["chat", "explain", "grammar", "reply", "rewrite", "summarize"]);
   assert.equal(c.modes.rewrite.system, MODE_PROMPTS.rewrite);
   assert.equal(c.minExtensionVersion, null);
 

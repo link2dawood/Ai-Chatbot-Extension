@@ -1,11 +1,13 @@
 # Smart Chat Assistant 2.5
 
-Chrome Manifest V3 side-panel assistant with Chat, Rewrite, Grammar, Summarize, and Explain modes.
+Chrome Manifest V3 side-panel assistant with Chat, Reply ("What should I say?"), Rewrite (with intents like Decline or Follow up), Grammar, Summarize, and Explain modes.
 
 ## Included
 - Native Chrome side panel
 - 10 successful free chats per local Chrome profile
-- Chat / Rewrite / Grammar / Summarize / Explain modes
+- Chat / Reply / Rewrite / Grammar / Summarize / Explain modes
+- Reply: select a message you received and get four ready-to-send replies (Professional, Persuasive, Short, Friendly)
+- Rewrite intents: Agree, Disagree, Ask for clarification, Negotiate, Follow up, Decline, Apologize, Persuade, Escalate, Thank, Request, Remind
 - Copy, insert into page, clear history, export, light/dark theme
 - Vercel serverless API route at `api/chat.js`
 - Choice of provider: OpenAI, DeepSeek, Anthropic or v0. Keys stay server-side.

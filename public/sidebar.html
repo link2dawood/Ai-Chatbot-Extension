@@ -27,6 +27,7 @@
 
     <nav class="mode-strip" aria-label="Assistant mode">
       <button class="mode-pill is-active" data-mode="chat" type="button"><span>Chat</span></button>
+      <button class="mode-pill" data-mode="reply" type="button"><span>Reply</span></button>
       <button class="mode-pill" data-mode="rewrite" type="button"><span>Rewrite</span></button>
       <button class="mode-pill" data-mode="grammar" type="button"><span>Grammar</span></button>
       <button class="mode-pill" data-mode="summarize" type="button"><span>Summarize</span></button>
@@ -72,6 +73,10 @@
             <button class="mini-button quality-btn" id="qualityBtn" type="button" aria-pressed="false" hidden>
               <svg viewBox="0 0 24 24"><path d="m12 3 2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.5 6.6 19.5l1.2-6L3.3 9.3l6.1-.7L12 3Z"/></svg>
               <span id="qualityLabel">Premium</span>
+            </button>
+            <button class="mini-button" id="selectionBtn" type="button" title="Use the text you selected on the page" hidden>
+              <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h16"/></svg>
+              Use selection
             </button>
             <button class="mini-button" id="attachBtn" type="button" title="Attach images, PDFs or text files (Premium)">
               <svg viewBox="0 0 24 24"><path d="m21 11.5-8.6 8.6a5 5 0 0 1-7.1-7.1l8.9-8.9a3.4 3.4 0 0 1 4.8 4.8l-8.9 8.9a1.7 1.7 0 0 1-2.4-2.4l8.2-8.2"/></svg>
