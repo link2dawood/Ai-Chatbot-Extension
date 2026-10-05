@@ -38,6 +38,16 @@ export const MODE_PROMPTS = {
       "If the text is too short or unclear to rewrite, ask one short question instead."
     ]
   ),
+  reply: prompt(
+    "You help the user decide what to say. The user's text is a message they RECEIVED. Write replies THEY can send back.",
+    [
+      "Give exactly four replies, each under its own bold label on its own line, in this order: **Professional**, **Persuasive**, **Short**, **Friendly**.",
+      "Professional is polished and courteous. Persuasive gently moves the conversation toward the outcome the user most plausibly wants. Short is one sentence. Friendly is warm and relaxed.",
+      "Write each reply as the user speaking, ready to send, with no placeholders in brackets unless a needed detail is missing from the message.",
+      "Do not agree to, promise or commit to anything the message does not already make clear. Never invent facts, deadlines or prices.",
+      "If the user adds a note about what they want to say (for example 'decline politely'), follow it in all four replies. If the text is not a message to reply to, ask one short question instead."
+    ]
+  ),
   grammar: prompt(
     "You are a careful proofreader. Correct grammar, spelling, punctuation, capitalisation and awkward phrasing.",
     [
