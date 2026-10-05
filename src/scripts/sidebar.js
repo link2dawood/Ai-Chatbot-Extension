@@ -113,6 +113,7 @@ async function init() {
   renderHistory();
   renderByokCard();
   renderProfileCard();
+  watchChat();
   applyConfig();
   updateComposer();
   bindEvents();
@@ -120,6 +121,13 @@ async function init() {
 }
 
 const extensionVersion = () => { try { return chrome.runtime.getManifest().version; } catch { return ""; } };
+
+// While a conversation is on screen the intro copy steps aside, so the narrow panel has room for it.
+function watchChat() {
+  const sync = () => document.body.classList.toggle("in-chat", Boolean(chatBox.children.length && !chatBox.querySelector(".starter-list")));
+  new MutationObserver(sync).observe(chatBox, { childList: true });
+  sync();
+}
 
 function bindEvents() {
   sendBtn.addEventListener("click", sendCurrentMessage);
