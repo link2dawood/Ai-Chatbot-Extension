@@ -21,6 +21,7 @@ Smart Chat Assistant is an AI writing and chat assistant that lives in Chrome's 
 FIVE MODES FOR EVERYDAY WRITING
 - Chat: ask questions, brainstorm ideas, draft replies and make quick plans.
 - Reply ("What should I say?"): select a message you received and get four ready-to-send replies: professional, persuasive, short and friendly.
+- My writing profile: set your tone, sentence length and words to avoid, or let it learn your style from examples; Rewrite and Reply then sound like you.
 - Rewrite: choose what the message should do (agree, decline, follow up, apologize, escalate and more), or make your text clearer, more professional or friendlier, or shorter, while keeping your meaning, names, numbers and dates.
 - Grammar: fix spelling, grammar and punctuation with a light touch that keeps your own voice.
 - Summarize: turn long text, articles or email threads into short bullets or a paragraph.

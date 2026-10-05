@@ -148,6 +148,30 @@
         <a id="upgradeLink" class="upgrade-link" href="#" target="_blank" rel="noopener" hidden>Upgrade to Premium Access</a>
         <p id="envNote" class="settings-status" hidden>Test mode: purchases use Polar's sandbox, so only sandbox license keys work.</p>
       </div>
+      <div class="settings-card" id="profileCard">
+        <span class="settings-card-label">MY WRITING PROFILE</span>
+        <strong>Make it sound like me</strong>
+        <p>Rewrite and Reply follow this profile. It is saved only in this browser and sent with those requests when it is on.</p>
+        <label class="check-row"><input id="profileEnabled" type="checkbox"> Use my profile</label>
+        <label class="field-label" for="profileTone">Tone</label>
+        <select id="profileTone" class="select-input"></select>
+        <label class="field-label" for="profileSentenceLength">Sentence length</label>
+        <select id="profileSentenceLength" class="select-input"></select>
+        <label class="field-label" for="profileVocabulary">Vocabulary</label>
+        <select id="profileVocabulary" class="select-input"></select>
+        <label class="field-label" for="profileFormality">Formality</label>
+        <select id="profileFormality" class="select-input"></select>
+        <label class="field-label" for="profilePersonality">Personality</label>
+        <select id="profilePersonality" class="select-input"></select>
+        <label class="field-label" for="profileAvoid">Avoid (one per line)</label>
+        <textarea id="profileAvoid" class="text-input flush" rows="3" maxlength="400" placeholder="Corporate buzzwords&#10;Hope you're doing well"></textarea>
+        <label class="field-label" for="profileSamples">Learn my style: paste 5 to 10 examples of your writing</label>
+        <textarea id="profileSamples" class="text-input flush" rows="4" maxlength="5000" placeholder="Paste a few emails or messages you wrote"></textarea>
+        <button id="learnStyle" class="secondary-button" type="button">Learn my style</button>
+        <label class="field-label" for="profileLearned">What I learned (you can edit it)</label>
+        <textarea id="profileLearned" class="text-input flush" rows="5" maxlength="800"></textarea>
+        <p id="profileStatus" class="settings-status" role="status"></p>
+      </div>
       <div class="settings-card" id="usageCard">
         <span class="settings-card-label">YOUR PLAN</span>
         <strong id="usagePlan">Free</strong>

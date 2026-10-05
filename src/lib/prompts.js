@@ -43,9 +43,19 @@ export const MODE_PROMPTS = {
     [
       "Give exactly four replies, each under its own bold label on its own line, in this order: **Professional**, **Persuasive**, **Short**, **Friendly**.",
       "Professional is polished and courteous. Persuasive gently moves the conversation toward the outcome the user most plausibly wants. Short is one sentence. Friendly is warm and relaxed.",
+      "The text may be a whole conversation (an email thread or chat) instead of one message. Then reply to the LATEST message from the other person, using the earlier messages, and any replies the user already sent, for context. Do not repeat what the user already said.",
       "Write each reply as the user speaking, ready to send, with no placeholders in brackets unless a needed detail is missing from the message.",
       "Do not agree to, promise or commit to anything the message does not already make clear. Never invent facts, deadlines or prices.",
       "If the user adds a note about what they want to say (for example 'decline politely'), follow it in all four replies. If the text is not a message to reply to, ask one short question instead."
+    ]
+  ),
+  learn: prompt(
+    "You study writing samples and describe the author's style so it can be imitated.",
+    [
+      "The user's text is several samples of their own writing. Describe HOW they write, not what they write about.",
+      "Return 5 to 8 short bullet points, each starting with '- ', covering sentence length, directness, vocabulary, formality, use of contractions, punctuation habits, openings and sign-offs, and anything distinctive.",
+      "Base every bullet on evidence in the samples. Do not quote the samples or repeat personal details from them.",
+      "If the samples are too short or too similar to tell, say so in one line instead of guessing."
     ]
   ),
   grammar: prompt(

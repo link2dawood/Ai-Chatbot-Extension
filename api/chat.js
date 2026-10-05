@@ -6,7 +6,7 @@
 // GET ?info=1          → the older, smaller settings object (kept for older extensions).
 // GET                  → checks every provider (key accepted + model reachable). ?provider=<id> checks one,
 //                        ?verify=1 also sends a tiny real request to each.
-// POST { prompt, mode?, intent?, quality?, attachments?, system?, provider? } → one chat turn.
+// POST { prompt, mode?, intent?, style?, quality?, attachments?, system?, provider? } → one chat turn.
 //
 // The extension is a thin client: what to charge, how much each plan gets, which model answers and what
 // the prompts say are all decided here, so they can change with a deploy and no new extension release.
@@ -19,7 +19,7 @@
 //          premium provider. Attachments are for pro only.
 // Counting needs the Redis store (server/quota.js). See server/entitlement.js for licenses.
 
-import { intentInstruction } from "../server/intents.js";
+import { intentInstruction, styleInstruction } from "../server/intents.js";
 import { PROVIDERS, PROVIDER_IDS, ProviderError, canReadFiles, checkProvider, generate, isConfigured, isDisabled } from "../server/providers.js";
 import { denial, entitlementFor, gatingEnabled, polarEnvironment, readLicenseKey, upgradeUrl } from "../server/entitlement.js";
 import { AttachmentError, validateAttachments } from "../server/attachments.js";
@@ -208,8 +208,10 @@ async function handleChat(req, res) {
   }
 
   // The server decides the prompt when it knows the mode; a client-supplied one is only a fallback.
-  const intent = mode === "rewrite" ? intentInstruction(req.body?.intent) : "";
-  const system = [MODE_PROMPTS[mode] || clientSystem || DEFAULT_SYSTEM, intent].filter(Boolean).join("\n\n");
+  const writing = mode === "rewrite" || mode === "reply";
+  const intent = writing ? intentInstruction(req.body?.intent, mode) : "";
+  const style = writing ? styleInstruction(req.body?.style) : "";
+  const system = [MODE_PROMPTS[mode] || clientSystem || DEFAULT_SYSTEM, intent, style].filter(Boolean).join("\n\n");
 
   // Who is counted, and which provider answers.
   let who = null;
