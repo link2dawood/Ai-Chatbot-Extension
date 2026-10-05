@@ -74,6 +74,24 @@ export async function checkProviders({ provider, verify = true, licenseKey } = {
   throw new Error(data?.error || `Service check failed (${response.status}). Is the latest api/chat.js deployed?`);
 }
 
+// Public settings from the server: where the Upgrade button goes and whether
+// Polar is in test mode. Cheap (no provider calls). Returns null when the
+// server can't be reached, so the panel still works offline.
+export async function fetchServerInfo() {
+  try {
+    const url = new URL(API_ENDPOINT);
+    url.searchParams.set("info", "1");
+    const response = await fetch(url, { method: "GET" });
+    if (!response.ok) return null;
+    const data = await response.json();
+    let upgradeUrl = null;
+    try { upgradeUrl = data.upgradeUrl && new URL(data.upgradeUrl).protocol === "https:" ? data.upgradeUrl : null; } catch { /* ignore a malformed link */ }
+    return { gated: Boolean(data.gated), environment: data.environment === "sandbox" ? "sandbox" : "production", upgradeUrl };
+  } catch {
+    return null;
+  }
+}
+
 function licenseHeaders(licenseKey, headers = {}) {
   const key = typeof licenseKey === "string" ? licenseKey.trim() : "";
   return key ? { ...headers, "X-License-Key": key } : headers;

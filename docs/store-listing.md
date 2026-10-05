@@ -89,3 +89,19 @@ Use these on the dawoodzafar.us pages. Keep to one idea per page.
 - `store-assets/out/svg/` holds the same seven images as editable vector SVGs (no embedded bitmaps, text converted to outlines). The store does not accept SVG uploads.
 - To change something, edit the SVG in Figma, Inkscape or Illustrator and save it back to the same path, then run `node store-assets/make-assets.mjs --png-only` to re-render the PNGs from your edited SVGs.
 - `node store-assets/make-assets.mjs` rebuilds everything from scratch. PNG output needs ImageMagick (`convert`); the SVG step needs `pdftocairo` (poppler-utils).
+
+## Version 2.6: changes to make in the store form
+Version 2.6 lets users add their own API key. It adds three **optional** host permissions (`api.openai.com`, `api.deepseek.com`, `api.anthropic.com`), which Chrome asks the user for only when they add a key for that provider. Upload it as an update after the current version is approved, and update these:
+
+**Optional host permissions justification**
+```
+Optional, and only requested when a user chooses to add their own API key in Settings, and only for the one provider they pick (api.openai.com, api.deepseek.com or api.anthropic.com). It lets the extension send that user's message directly to their chosen provider using their key. It is never requested otherwise, and removing the key removes the permission.
+```
+**storage justification** (replace the old one)
+```
+Saves data locally on the user's device in chrome.storage.local: settings (theme, mode, provider), the last 50 chat messages, a free-chat counter, the license key for paying users and, if the user adds one, their own API key. Nothing is synced. The license key is sent to our server to verify a subscription. A user's own API key is sent only to the provider they chose, never to our server.
+```
+**Data usage:** unchanged (Personal communications and Authentication information are already ticked). **Privacy policy:** the page must say the own key stays in the browser and goes only to the chosen provider (the site prompt now includes this).
+
+Also add one line to the listing text under "SIMPLE AND PRIVATE": `- Prefer your own account? Add your own OpenAI, DeepSeek or Anthropic key in Settings. It stays in your browser and goes only to that provider.`
+

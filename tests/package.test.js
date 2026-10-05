@@ -112,3 +112,18 @@ test("a manifest and package.json version mismatch is caught", () => {
   assert.match(result.errors.join("\n"), /versions? .*differ|differ/);
   rmSync(root, { recursive: true, force: true });
 });
+
+test("the provider hosts in optional_host_permissions are allowed, others are not", () => {
+  const root = sandbox();
+  const ok = buildPackage({ root });
+  assert.equal(ok.ok, true, ok.errors?.join("\n"));
+  const manifest = JSON.parse(readFileSync(join(root, "manifest.json"), "utf8"));
+  assert.deepEqual(manifest.optional_host_permissions.sort(), ["https://api.anthropic.com/*", "https://api.deepseek.com/*", "https://api.openai.com/*"]);
+  assert.ok(!manifest.permissions.includes("contextMenus"));
+
+  editManifest(root, m => { m.optional_host_permissions.push("https://generativelanguage.googleapis.com/*"); });
+  const bad = buildPackage({ root });
+  assert.equal(bad.ok, false);
+  assert.match(bad.errors.join("\n"), /optional_host_permissions "https:\/\/generativelanguage\.googleapis\.com\/\*" is not approved/);
+  rmSync(root, { recursive: true, force: true });
+});

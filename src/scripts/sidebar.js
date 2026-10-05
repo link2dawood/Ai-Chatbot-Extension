@@ -1,6 +1,7 @@
 import { renderMarkdown } from "../lib/markdown.js";
 import { MODE_PROMPTS } from "../lib/prompts.js";
-import { sendAssistantRequest, checkProviders, PROVIDER_OPTIONS } from "../lib/api.js";
+import { sendAssistantRequest, checkProviders, fetchServerInfo, PROVIDER_OPTIONS } from "../lib/api.js";
+import { BYOK_PROVIDERS, BYOK_IDS, keyProblem, maskKey, sendOwnKeyRequest, testOwnKey } from "../lib/byok.js";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -73,6 +74,8 @@ const DEFAULT_SETTINGS = { theme: "light", mode: "chat", provider: "auto", licen
 let settings = { ...DEFAULT_SETTINGS };
 let history = [];
 let freeChatsUsed = 0;
+let byok = null; // { provider, key, model, enabled }: the user's own API key, kept only in this browser
+let serverInfo = null; // { gated, environment, upgradeUrl } from the server
 let isLoading = false;
 let lastAssistantText = "";
 let toastTimer = null;
@@ -89,15 +92,18 @@ function storageGet(keys) { return new Promise(resolve => chrome.storage.local.g
 function storageSet(data) { return new Promise(resolve => chrome.storage.local.set(data, resolve)); }
 
 async function init() {
-  const stored = await storageGet(["settings", "chatHistory", "freeChatsUsed"]);
+  const stored = await storageGet(["settings", "chatHistory", "freeChatsUsed", "byok"]);
   settings = { ...DEFAULT_SETTINGS, ...(stored.settings || {}) };
+  byok = stored.byok?.key && BYOK_PROVIDERS[stored.byok.provider] ? stored.byok : null;
   history = Array.isArray(stored.chatHistory) ? stored.chatHistory.slice(-50) : [];
   freeChatsUsed = Math.max(0, Number(stored.freeChatsUsed) || 0);
   applySettingsToUI();
   renderHistory();
+  renderByokCard();
   updateQuotaUI();
   updateComposer();
   bindEvents();
+  fetchServerInfo().then(applyServerInfo);
 }
 
 function bindEvents() {
@@ -124,6 +130,7 @@ function bindEvents() {
     }
     const copy = event.target.closest("[data-copy-message]");
     if (copy) copyText(copy.dataset.copyMessage || "");
+    if (event.target.closest("[data-open-own-key]")) openOwnKeySettings();
   });
 
   $("#settingsToggle").addEventListener("click", openSettings);
@@ -131,6 +138,16 @@ function bindEvents() {
   $("#themeToggle").addEventListener("click", toggleTheme);
   $("#testConnection").addEventListener("click", testConnection);
   $("#saveLicense").addEventListener("click", saveLicense);
+  $("#ownKeyBtn").addEventListener("click", openOwnKeySettings);
+  $("#saveByok").addEventListener("click", saveByok);
+  $("#removeByok").addEventListener("click", removeByok);
+  $("#byokProvider").addEventListener("change", () => { $("#byokKey").value = ""; setByokStatus("", ""); fillByokFields(); });
+  $("#byokEnabled").addEventListener("change", async () => {
+    if (!byok) return;
+    byok.enabled = $("#byokEnabled").checked;
+    await storageSet({ byok });
+    updateQuotaUI();
+  });
   providerSelect.addEventListener("change", async () => {
     settings.provider = providerSelect.value;
     await persistSettings();
@@ -228,10 +245,126 @@ function setLicenseStatus(message, type) {
   el.className = `settings-status${type ? ` ${type}` : ""}`;
 }
 
+// The Upgrade buttons appear as soon as the server tells us where to send people.
 function showUpgrade(url) {
-  const link = $("#upgradeLink");
-  if (url) link.href = url;
-  link.hidden = !url;
+  if (url) serverInfo = { ...(serverInfo || { gated: false, environment: "production" }), upgradeUrl: url };
+  const target = serverInfo?.upgradeUrl || null;
+  for (const id of ["#upgradeLink", "#upgradeBtn"]) {
+    const link = $(id);
+    if (target) link.href = target;
+    link.hidden = !target;
+  }
+}
+
+function applyServerInfo(info) {
+  if (!info) return;
+  serverInfo = info;
+  showUpgrade(info.upgradeUrl);
+  $("#envNote").hidden = info.environment !== "sandbox";
+}
+
+// ---- your own API key ----
+
+const hasOwnKey = () => Boolean(byok?.key && byok.enabled !== false);
+const hasLicense = () => Boolean(settings.licenseKey);
+// Chats with your own key, or with a Premium license, are not limited by the free allowance.
+const unlimited = () => hasOwnKey() || hasLicense();
+
+function openOwnKeySettings() {
+  openSettings();
+  $("#ownKeyCard").scrollIntoView({ block: "start" });
+  $("#byokKey").focus();
+}
+
+function setByokStatus(message, type) {
+  const el = $("#byokStatus");
+  el.textContent = message;
+  el.className = `settings-status${type ? ` ${type}` : ""}`;
+}
+
+function fillByokFields() {
+  const id = $("#byokProvider").value;
+  const info = BYOK_PROVIDERS[id];
+  $("#byokModel").placeholder = info.defaultModel;
+  $("#byokKey").placeholder = byok?.provider === id ? `Key saved (${maskKey(byok.key)}). Paste a new one to replace it.` : info.keyPlaceholder;
+  $("#byokModel").value = byok?.provider === id ? byok.model || "" : "";
+  const link = $("#byokGetKey");
+  link.href = info.keyUrl;
+  link.textContent = `Get a ${info.label} key`;
+}
+
+function renderByokCard() {
+  const select = $("#byokProvider");
+  select.innerHTML = BYOK_IDS.map(id => `<option value="${id}">${escapeText(BYOK_PROVIDERS[id].label)}</option>`).join("");
+  select.value = byok?.provider || "openai";
+  fillByokFields();
+  $("#byokEnabledRow").hidden = !byok;
+  $("#removeByok").hidden = !byok;
+  $("#byokEnabled").checked = byok ? byok.enabled !== false : false;
+  if (byok) setByokStatus(`Saved: ${BYOK_PROVIDERS[byok.provider].label} key ${maskKey(byok.key)}. ${byok.enabled !== false ? "Your chats use it." : "Turned off."}`, "success");
+}
+
+async function saveByok() {
+  const button = $("#saveByok");
+  const provider = $("#byokProvider").value;
+  const info = BYOK_PROVIDERS[provider];
+  const typed = $("#byokKey").value.trim();
+  const key = typed || (byok?.provider === provider ? byok.key : "");
+  const model = $("#byokModel").value.trim();
+
+  const problem = keyProblem(provider, key);
+  if (problem) return setByokStatus(problem, "error");
+
+  button.disabled = true;
+  setByokStatus("Asking Chrome for permission…", "");
+  try {
+    // Must be the first await in the click handler so Chrome treats it as a user action.
+    const granted = await chrome.permissions.request({ origins: [info.origin] });
+    if (!granted) throw new Error(`Chrome needs your permission to contact ${info.label}. Press Save again and choose Allow.`);
+    setByokStatus(`Testing your ${info.label} key…`, "");
+    const result = await testOwnKey({ provider, key, model });
+    byok = { provider, key, model, enabled: true };
+    await storageSet({ byok });
+    $("#byokKey").value = "";
+    renderByokCard();
+    setByokStatus(`Your ${info.label} key works (${result.model}). Your chats now use it, with no limit.`, "success");
+    updateQuotaUI();
+  } catch (error) {
+    console.error("[Smart Chat] Own-key test failed", { provider, status: error?.status, code: error?.code, message: error?.message });
+    setByokStatus(error.message || "Could not test the key.", "error");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function removeByok() {
+  if (!byok) return;
+  const origin = BYOK_PROVIDERS[byok.provider].origin;
+  byok = null;
+  await new Promise(resolve => chrome.storage.local.remove("byok", resolve));
+  try { await chrome.permissions.remove({ origins: [origin] }); } catch { /* the permission may already be gone */ }
+  $("#byokKey").value = "";
+  renderByokCard();
+  setByokStatus("Your key was removed from this browser.", "");
+  updateQuotaUI();
+}
+
+// Shown in the chat when the free allowance is used up.
+function showLimitCard() {
+  $("#limitCard")?.remove();
+  const card = document.createElement("div");
+  card.id = "limitCard";
+  card.className = "limit-card";
+  const upgrade = serverInfo?.upgradeUrl;
+  card.innerHTML = `
+    <strong>You have used your ${FREE_CHAT_LIMIT} free chats</strong>
+    <p>Keep going with Premium Access, or add your own API key for unlimited chats.</p>
+    <div class="plan-actions">
+      ${upgrade ? `<a class="plan-btn primary" href="${escapeAttr(upgrade)}" target="_blank" rel="noopener">Upgrade to Premium</a>` : ""}
+      <button class="plan-btn" type="button" data-open-own-key>Use your own key</button>
+    </div>`;
+  chatBox.append(card);
+  scrollToBottom();
 }
 
 async function saveLicense() {
@@ -370,11 +503,12 @@ function removeTyping() { $("#typingMessage")?.remove(); }
 async function sendCurrentMessage() {
   const text = inputText.value.trim();
   if (!text || isLoading) return;
-  if (freeChatsUsed >= FREE_CHAT_LIMIT) {
-    toast("You have used your 10 free chats");
+  if (!unlimited() && freeChatsUsed >= FREE_CHAT_LIMIT) {
+    showLimitCard();
     updateQuotaUI();
     return;
   }
+  $("#limitCard")?.remove();
 
   isLoading = true;
   inputText.value = "";
@@ -388,11 +522,15 @@ async function sendCurrentMessage() {
 
   try {
     const mode = MODES[settings.mode] || MODES.chat;
-    const result = await sendAssistantRequest({ prompt: text, system: mode.system, provider: settings.provider, licenseKey: settings.licenseKey });
+    const useOwnKey = hasOwnKey();
+    const result = useOwnKey
+      ? await sendOwnKeyRequest({ provider: byok.provider, key: byok.key, model: byok.model, prompt: text, system: mode.system })
+      : await sendAssistantRequest({ prompt: text, system: mode.system, provider: settings.provider, licenseKey: settings.licenseKey });
     removeTyping();
     lastAssistantText = result.text;
     history.push({ role: "assistant", text: result.text, at: Date.now() });
-    freeChatsUsed += 1;
+    // Only chats on our hosted models use the free allowance.
+    if (!useOwnKey && !hasLicense()) freeChatsUsed += 1;
     addMessageToDOM("assistant", result.text);
     await Promise.all([persistHistory(), persistQuota()]);
     updateQuotaUI();
@@ -437,15 +575,27 @@ function friendlyError(error) {
 function updateQuotaUI() {
   const remaining = Math.max(0, FREE_CHAT_LIMIT - freeChatsUsed);
   const usedPercent = Math.min(100, Math.round((freeChatsUsed / FREE_CHAT_LIMIT) * 100));
-  $("#quotaText").textContent = remaining === 1 ? "1 chat left" : `${remaining} chats left`;
-  $("#quotaFill").style.width = `${usedPercent}%`;
-  document.body.classList.toggle("quota-empty", remaining === 0);
+  if (hasOwnKey()) {
+    $("#quotaLabel").textContent = "Your key";
+    $("#quotaText").textContent = `${BYOK_PROVIDERS[byok.provider].label}, unlimited`;
+    $("#quotaFill").style.width = "0%";
+  } else if (hasLicense()) {
+    $("#quotaLabel").textContent = "Premium";
+    $("#quotaText").textContent = "Unlimited chats";
+    $("#quotaFill").style.width = "0%";
+  } else {
+    $("#quotaLabel").textContent = "Free plan";
+    $("#quotaText").textContent = remaining === 1 ? "1 chat left" : `${remaining} chats left`;
+    $("#quotaFill").style.width = `${usedPercent}%`;
+  }
+  document.body.classList.toggle("quota-empty", !unlimited() && remaining === 0);
+  $("#planActions").hidden = unlimited();
   updateComposer();
 }
 
 function updateComposer() {
   charCounter.textContent = `${inputText.value.length} / 6000`;
-  sendBtn.disabled = isLoading || !inputText.value.trim() || freeChatsUsed >= FREE_CHAT_LIMIT;
+  sendBtn.disabled = isLoading || !inputText.value.trim() || (!unlimited() && freeChatsUsed >= FREE_CHAT_LIMIT);
 }
 
 function autoSizeInput() {

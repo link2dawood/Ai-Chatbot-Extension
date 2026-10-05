@@ -6,12 +6,20 @@
 // validate endpoint is public, so no access token is needed:
 //   POST {api}/v1/customer-portal/license-keys/validate  { key, organization_id }
 //
-// Gating is switched on by setting POLAR_ORGANIZATION_ID. Without it the API
-// stays open, so a deployment without Polar is not locked out.
+// Gating is switched on by setting the organization id for the active Polar
+// environment. Without it the API stays open, so a deployment without Polar is
+// not locked out.
 //
-//   POLAR_ORGANIZATION_ID  required to enable gating (a UUID from Polar → Settings)
-//   POLAR_CHECKOUT_URL     where "Upgrade" sends users (a Polar checkout link)
-//   POLAR_SERVER           "sandbox" to use sandbox-api.polar.sh (default: production)
+//   POLAR_ENV                       "sandbox" or "production" (default). The one switch
+//                                   that decides which Polar the server talks to.
+//   POLAR_ORGANIZATION_ID           production organization id (Polar → Settings)
+//   POLAR_CHECKOUT_URL              production checkout link used by the Upgrade button
+//   POLAR_SANDBOX_ORGANIZATION_ID   sandbox organization id (a separate id from production)
+//   POLAR_SANDBOX_CHECKOUT_URL      sandbox checkout link
+//
+// Keep both sets in Vercel and flip POLAR_ENV to switch. In sandbox mode the
+// sandbox values are used, falling back to the production names when a sandbox
+// one is not set. POLAR_SERVER is the old name for POLAR_ENV and still works.
 
 import { createHash } from "node:crypto";
 
@@ -19,16 +27,35 @@ const VALID_CACHE_MS = 5 * 60 * 1000;
 const CHECK_TIMEOUT_MS = 8000;
 const cache = new Map(); // sha256(key) → { until, result }
 
-export function gatingEnabled(env = process.env) {
-  return Boolean(env.POLAR_ORGANIZATION_ID?.trim());
+// "sandbox" or "production". Anything other than sandbox/test means production,
+// so a typo can never silently send real customers to the sandbox.
+export function polarEnvironment(env = process.env) {
+  const value = (env.POLAR_ENV || env.POLAR_SERVER || "").trim().toLowerCase();
+  return value === "sandbox" || value === "test" ? "sandbox" : "production";
 }
 
+function setting(env, sandboxName, productionName) {
+  const live = env[productionName]?.trim() || null;
+  if (polarEnvironment(env) !== "sandbox") return live;
+  return env[sandboxName]?.trim() || live;
+}
+
+export function organizationId(env = process.env) {
+  return setting(env, "POLAR_SANDBOX_ORGANIZATION_ID", "POLAR_ORGANIZATION_ID");
+}
+
+export function gatingEnabled(env = process.env) {
+  return Boolean(organizationId(env));
+}
+
+// Only https links are handed to the extension.
 export function upgradeUrl(env = process.env) {
-  return env.POLAR_CHECKOUT_URL?.trim() || null;
+  const url = setting(env, "POLAR_SANDBOX_CHECKOUT_URL", "POLAR_CHECKOUT_URL");
+  try { return url && new URL(url).protocol === "https:" ? url : null; } catch { return null; }
 }
 
 function apiBase(env) {
-  return env.POLAR_SERVER?.trim().toLowerCase() === "sandbox" ? "https://sandbox-api.polar.sh" : "https://api.polar.sh";
+  return polarEnvironment(env) === "sandbox" ? "https://sandbox-api.polar.sh" : "https://api.polar.sh";
 }
 
 export function readLicenseKey(req) {
@@ -45,10 +72,10 @@ export function clearLicenseCache() {
 //   reason: "ok" | "missing" | "invalid" | "revoked" | "expired" | "unavailable"
 export async function validateLicense(key, { env = process.env } = {}) {
   if (!key) return { valid: false, reason: "missing" };
-  const orgId = env.POLAR_ORGANIZATION_ID?.trim();
+  const orgId = organizationId(env);
   if (!orgId) return { valid: false, reason: "unavailable" };
 
-  const id = createHash("sha256").update(`${orgId}:${key}`).digest("hex");
+  const id = createHash("sha256").update(`${polarEnvironment(env)}:${orgId}:${key}`).digest("hex");
   const hit = cache.get(id);
   if (hit && hit.until > Date.now()) return hit.result;
 

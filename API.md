@@ -89,13 +89,40 @@ Sample response:
 }
 ```
 
+## `GET /api/chat?info=1`: public settings
+
+Cheap and safe: no provider calls and nothing secret. The extension reads it on open to know where the Upgrade button goes.
+
+```json
+{ "ok": true, "gated": true, "environment": "production", "upgradeUrl": "https://buy.polar.sh/polar_cl_..." }
+```
+
+`upgradeUrl` is `null` unless the checkout link is set and uses `https`. `environment` is `sandbox` when `POLAR_ENV=sandbox`; the extension then shows a "test mode" note.
+
 ## Paid access with Polar
 
-Set `POLAR_ORGANIZATION_ID` and the hosted providers become paid-only. Leave it empty and the API stays open.
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `POLAR_ENV` | `production` (default) or `sandbox`. The one switch for which Polar the server uses. Any other value means production. |
+| `POLAR_ORGANIZATION_ID` | Production organization id. **Setting it turns paid-only access on.** Leave it unset to keep the API open. |
+| `POLAR_CHECKOUT_URL` | Production checkout link for the Upgrade buttons. Works even while paid-only access is off. |
+| `POLAR_SANDBOX_ORGANIZATION_ID` | Sandbox organization id (a different id from production). |
+| `POLAR_SANDBOX_CHECKOUT_URL` | Sandbox checkout link. |
+
+Keep both sets in Vercel and flip `POLAR_ENV`. In sandbox mode the `POLAR_SANDBOX_*` values are used, and the production names are the fallback when a sandbox one is not set. The old name `POLAR_SERVER` still works; `POLAR_ENV` wins if both are set. Redeploy after changing any of them.
+
+### Setup
 
 1. In Polar, create a product (a subscription or one-time purchase) and add the **License Keys** benefit to it.
-2. In Polar → Settings, copy the **Organization ID**. Create a **checkout link** for the product.
-3. In Vercel, set `POLAR_ORGANIZATION_ID` and `POLAR_CHECKOUT_URL`, then redeploy. Set `POLAR_SERVER=sandbox` to try it against Polar's sandbox first.
-4. A customer buys, Polar emails them a license key, and they paste it into the extension under Settings → Paid plan.
+2. In Polar → Settings, copy the **Organization ID**. Create a **checkout link** for the product, with the success URL pointing at your site.
+3. In Vercel, set the checkout link variable first. The Upgrade buttons appear in the extension right away.
+4. When you want paid-only access, set the organization id for the active environment and redeploy.
+5. A customer buys, Polar emails them a license key, and they paste it into the extension under Settings → Paid plan.
 
-On every request the server asks Polar `POST /v1/customer-portal/license-keys/validate` with `{ "key", "organization_id" }` and accepts the key only when its `status` is `granted` and it has not expired. Valid results are cached for 5 minutes, so a cancelled subscription stops working within about 5 minutes. If Polar is unreachable the request is refused.
+On every request the server asks Polar `POST /v1/customer-portal/license-keys/validate` with `{ "key", "organization_id" }` and accepts the key only when its `status` is `granted` and it has not expired. Valid results are cached for 5 minutes (per environment), so a cancelled subscription stops working within about 5 minutes. If Polar is unreachable the request is refused.
+
+## Own API keys (no server involved)
+
+Users can add their own OpenAI, DeepSeek or Anthropic key under Settings → Your own API key. The extension then calls that provider directly from the browser: the key is stored only in `chrome.storage.local` and never reaches this server, so none of the endpoints above are involved and there is no free limit. Chrome asks for permission to contact that one provider at the moment the key is added (`optional_host_permissions` in `manifest.json`), and removing the key removes the permission.

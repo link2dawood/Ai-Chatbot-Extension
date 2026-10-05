@@ -21,6 +21,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // justification, or leaving an unused one in the manifest, risks rejection.
 export const ALLOWED_PERMISSIONS = ["sidePanel", "storage", "activeTab", "scripting"];
 
+// Hosts the extension may ask the user for at runtime, only when they add their
+// own API key for that provider (see src/lib/byok.js). Keep in step with the
+// "optional host permissions" justification in the store dashboard.
+export const ALLOWED_OPTIONAL_HOSTS = ["https://api.openai.com/*", "https://api.deepseek.com/*", "https://api.anthropic.com/*"];
+
 const INCLUDE = ["manifest.json", "background.js", "public", "src", "assets"];
 const EXCLUDE = [/^assets\/screenshot-/, /^assets\/icon-512\.png$/, /(^|\/)\.DS_Store$/, /(^|\/)Thumbs\.db$/];
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -67,6 +72,9 @@ export function validate(root, files) {
     }
   }
   for (const permission of manifest.optional_permissions || []) fail(`optional_permissions "${permission}": declare optional permissions deliberately; none are approved.`);
+  for (const host of manifest.optional_host_permissions || []) {
+    if (!ALLOWED_OPTIONAL_HOSTS.includes(host)) fail(`optional_host_permissions "${host}" is not approved. Remove it, or add it to ALLOWED_OPTIONAL_HOSTS in scripts/package.mjs and update the store justification.`);
+  }
   if (manifest.content_scripts?.length) fail("content_scripts are not used by this extension and add host-permission review. Remove them.");
 
   // Hosts: exactly the backend the code calls.

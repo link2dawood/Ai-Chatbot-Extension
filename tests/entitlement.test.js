@@ -2,11 +2,12 @@ import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import handler from "../api/chat.js";
-import { clearLicenseCache, gatingEnabled, validateLicense } from "../server/entitlement.js";
+import { clearLicenseCache, gatingEnabled, organizationId, polarEnvironment, upgradeUrl, validateLicense } from "../server/entitlement.js";
 import { MODE_IDS, MODE_PROMPTS, systemPromptFor } from "../src/lib/prompts.js";
 
 const VARS = ["OPENAI_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY", "V0_API_KEY", "AI_PROVIDER",
-  "OPENAI_MODEL", "POLAR_ORGANIZATION_ID", "POLAR_CHECKOUT_URL", "POLAR_SERVER"];
+  "OPENAI_MODEL", "POLAR_ORGANIZATION_ID", "POLAR_CHECKOUT_URL", "POLAR_SERVER", "POLAR_ENV",
+  "POLAR_SANDBOX_ORGANIZATION_ID", "POLAR_SANDBOX_CHECKOUT_URL"];
 const ORG = "11111111-2222-3333-4444-555555555555";
 const realFetch = globalThis.fetch;
 let saved;
@@ -182,4 +183,96 @@ test("sample payloads in examples/payloads.json are accepted by the API and matc
     assert.equal(res.statusCode, 200, mode);
     assert.equal(res.body.ok, true);
   }
+});
+
+const SANDBOX_ORG = "99999999-8888-7777-6666-555555555555";
+
+test("POLAR_ENV picks the Polar server, organization id and checkout link", async () => {
+  process.env.POLAR_ORGANIZATION_ID = ORG;
+  process.env.POLAR_CHECKOUT_URL = "https://buy.polar.sh/polar_cl_live";
+  process.env.POLAR_SANDBOX_ORGANIZATION_ID = SANDBOX_ORG;
+  process.env.POLAR_SANDBOX_CHECKOUT_URL = "https://sandbox.polar.sh/checkout/test";
+  stub(granted);
+
+  // default: production
+  assert.equal(polarEnvironment(), "production");
+  assert.equal(organizationId(), ORG);
+  assert.equal(upgradeUrl(), "https://buy.polar.sh/polar_cl_live");
+  await validateLicense("K1");
+  assert.equal(polarCalls()[0].url, "https://api.polar.sh/v1/customer-portal/license-keys/validate");
+  assert.equal(JSON.parse(polarCalls()[0].init.body).organization_id, ORG);
+
+  // sandbox: one switch flips all three
+  calls = [];
+  process.env.POLAR_ENV = "sandbox";
+  assert.equal(polarEnvironment(), "sandbox");
+  assert.equal(organizationId(), SANDBOX_ORG);
+  assert.equal(upgradeUrl(), "https://sandbox.polar.sh/checkout/test");
+  await validateLicense("K1");
+  assert.equal(polarCalls()[0].url, "https://sandbox-api.polar.sh/v1/customer-portal/license-keys/validate");
+  assert.equal(JSON.parse(polarCalls()[0].init.body).organization_id, SANDBOX_ORG);
+});
+
+test("POLAR_ENV: unknown values mean production, the old POLAR_SERVER still works, sandbox falls back to production names", () => {
+  process.env.POLAR_ORGANIZATION_ID = ORG;
+  process.env.POLAR_CHECKOUT_URL = "https://buy.polar.sh/polar_cl_live";
+  for (const value of ["live", "prod", "Production", "sandbx", ""]) {
+    process.env.POLAR_ENV = value;
+    assert.equal(polarEnvironment(), "production", value);
+  }
+  delete process.env.POLAR_ENV;
+  process.env.POLAR_SERVER = "sandbox";
+  assert.equal(polarEnvironment(), "sandbox");
+  // no sandbox-specific values set: the production names are used
+  assert.equal(organizationId(), ORG);
+  assert.equal(upgradeUrl(), "https://buy.polar.sh/polar_cl_live");
+  process.env.POLAR_ENV = "production"; // POLAR_ENV wins over POLAR_SERVER
+  assert.equal(polarEnvironment(), "production");
+});
+
+test("a license cached in one environment is not trusted in the other", async () => {
+  process.env.POLAR_ORGANIZATION_ID = ORG;
+  process.env.POLAR_SANDBOX_ORGANIZATION_ID = ORG; // same id on purpose
+  stub(granted);
+  await validateLicense("K");
+  process.env.POLAR_ENV = "sandbox";
+  await validateLicense("K");
+  assert.equal(polarCalls().length, 2);
+});
+
+test("only https checkout links are handed out", () => {
+  process.env.POLAR_ORGANIZATION_ID = ORG;
+  for (const bad of ["javascript:alert(1)", "http://example.com", "not a url", "data:text/html,x"]) {
+    process.env.POLAR_CHECKOUT_URL = bad;
+    assert.equal(upgradeUrl(), null, bad);
+  }
+  process.env.POLAR_CHECKOUT_URL = "https://buy.polar.sh/polar_cl_ok";
+  assert.equal(upgradeUrl(), "https://buy.polar.sh/polar_cl_ok");
+});
+
+test("GET ?info=1 returns the public settings without calling any provider or Polar", async () => {
+  process.env.POLAR_ORGANIZATION_ID = ORG;
+  process.env.POLAR_CHECKOUT_URL = "https://buy.polar.sh/polar_cl_live";
+  stub(() => { throw new Error("no outbound calls expected"); });
+  const res = await call({ method: "GET", query: { info: "1" } });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { ok: true, gated: true, environment: "production", upgradeUrl: "https://buy.polar.sh/polar_cl_live" });
+  assert.equal(calls.length, 0);
+
+  process.env.POLAR_ENV = "sandbox";
+  process.env.POLAR_SANDBOX_CHECKOUT_URL = "https://sandbox.polar.sh/checkout/test";
+  const sandbox = await call({ method: "GET", query: { info: "1" } });
+  assert.equal(sandbox.body.environment, "sandbox");
+  assert.equal(sandbox.body.upgradeUrl, "https://sandbox.polar.sh/checkout/test");
+  assert.equal(Object.keys(sandbox.body).sort().join(), "environment,gated,ok,upgradeUrl", "nothing secret is exposed");
+});
+
+test("the 402 for a free user carries the checkout link for the active environment", async () => {
+  process.env.POLAR_ENV = "sandbox";
+  process.env.POLAR_SANDBOX_ORGANIZATION_ID = SANDBOX_ORG;
+  process.env.POLAR_SANDBOX_CHECKOUT_URL = "https://sandbox.polar.sh/checkout/test";
+  stub(granted);
+  const res = await call({ method: "POST", body });
+  assert.equal(res.statusCode, 402);
+  assert.equal(res.body.upgradeUrl, "https://sandbox.polar.sh/checkout/test");
 });
