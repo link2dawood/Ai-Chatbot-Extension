@@ -1,5 +1,6 @@
 // Vercel Serverless Function — /api/chat
 //
+// GET ?info=1                  → public settings only: { gated, environment, upgradeUrl } (no provider calls).
 // GET                          → checks every provider (key accepted + model reachable).
 // GET ?provider=<id>           → checks one provider.
 // GET ...&verify=1             → also sends a tiny real request to each checked provider.
@@ -8,13 +9,14 @@
 //
 // Keys live only in Vercel environment variables; see server/providers.js.
 //
-// When POLAR_ORGANIZATION_ID is set, the server-side providers are for paid
+// When a Polar organization id is set (POLAR_ORGANIZATION_ID, or the sandbox one
+// when POLAR_ENV=sandbox), the server-side providers are for paid
 // users only: POST needs a valid Polar license key in the X-License-Key
 // header, and GET ?verify=1 (which spends tokens) needs one too. See
 // server/entitlement.js.
 
 import { PROVIDERS, PROVIDER_IDS, ProviderError, checkProvider, generate, isConfigured, resolveProvider } from "../server/providers.js";
-import { denial, entitlementFor } from "../server/entitlement.js";
+import { denial, entitlementFor, gatingEnabled, polarEnvironment, upgradeUrl } from "../server/entitlement.js";
 
 const MAX_PROMPT = 6000;
 const MAX_SYSTEM = 4000;
@@ -35,6 +37,12 @@ function send(res, status, body) {
 function queryParam(req, name) {
   const value = req.query?.[name];
   return Array.isArray(value) ? value[0] : value;
+}
+
+// Cheap, public settings for the extension (no provider calls, no secrets):
+// where the Upgrade button goes and whether Polar is in test mode.
+function handleInfo(res) {
+  return send(res, 200, { ok: true, gated: gatingEnabled(), environment: polarEnvironment(), upgradeUrl: upgradeUrl() });
 }
 
 async function handleHealth(req, res) {
@@ -60,6 +68,8 @@ async function handleHealth(req, res) {
     verified: verify,
     gated: entitlement.gated,
     entitled: entitlement.entitled,
+    environment: polarEnvironment(),
+    upgradeUrl: upgradeUrl(),
     defaultProvider,
     providers,
     error: ok ? null : (requested ? results[0].error : "No AI provider is connected. Add at least one API key on Vercel and redeploy.")
@@ -129,7 +139,7 @@ async function handleChat(req, res) {
 export default async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method === "GET") return handleHealth(req, res);
+  if (req.method === "GET") return queryParam(req, "info") ? handleInfo(res) : handleHealth(req, res);
   if (req.method === "POST") return handleChat(req, res);
   res.setHeader("Allow", "GET, POST, OPTIONS");
   return send(res, 405, { ok: false, error: "Method not allowed." });

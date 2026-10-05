@@ -161,3 +161,19 @@ body.dark .quota-meter { background: #30342f; }
 .text-input { width: 100%; margin-top: 10px; min-height: 34px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); color: var(--ink); padding: 0 9px; font-size: 11px; }
 .upgrade-link { display: inline-block; margin-top: 8px; color: var(--accent); font-size: 10px; font-weight: 650; }
 .upgrade-link[hidden] { display: none; }
+
+.quota-block { display: block; }
+.plan-actions { display: flex; gap: 8px; margin: 10px 14px 0; }
+.plan-actions[hidden] { display: none; }
+.plan-btn { flex: 1; display: inline-block; text-align: center; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font-size: 10.5px; font-weight: 650; cursor: pointer; text-decoration: none; }
+.plan-btn:hover { border-color: var(--accent); }
+.plan-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.plan-btn[hidden] { display: none; }
+.text-input.flush { margin-top: 5px; }
+.link-button { display: block; margin: 10px auto 0; border: 0; background: transparent; color: var(--danger); font-size: 10px; cursor: pointer; text-decoration: underline; }
+.check-row { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 10.5px; color: var(--ink); }
+.check-row[hidden], .link-button[hidden] { display: none; }
+.limit-card { margin: 4px 0 14px; padding: 14px; border: 1px solid var(--line-strong); border-radius: 13px; background: var(--surface); }
+.limit-card strong { display: block; font-size: 12px; }
+.limit-card p { margin: 6px 0 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.limit-card .plan-actions { margin: 0; }

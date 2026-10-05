@@ -9,7 +9,9 @@ Chrome Manifest V3 side-panel assistant with Chat, Rewrite, Grammar, Summarize, 
 - Copy, insert into page, clear history, export, light/dark theme
 - Vercel serverless API route at `api/chat.js`
 - Choice of provider: OpenAI, DeepSeek, Anthropic or v0. Keys stay server-side.
-- Paid-only access to the hosted providers through Polar license keys (optional; see [API.md](API.md))
+- Clear "Upgrade to Premium" and "Use your own key" buttons in the panel
+- Users can add their own OpenAI, DeepSeek or Anthropic key (stored only in their browser, called directly)
+- Paid-only access to the hosted providers through Polar license keys, with a sandbox/production switch (optional; see [API.md](API.md))
 - Connection check that verifies each provider's key, model and billing, and suggests a fix when something fails
 
 ## API architecture

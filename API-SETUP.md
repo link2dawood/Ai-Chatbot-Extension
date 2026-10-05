@@ -47,6 +47,14 @@ POST /api/chat  { "prompt": "...", "system": "...", "provider": "auto" | "openai
 
 A successful reply returns `{ ok, provider, model, text, usage }`. A failure returns `{ ok: false, provider, upstreamStatus, upstreamCode, error, hint }`. Upstream 4xx statuses are passed through, and upstream 5xx statuses become 502.
 
+## Paid access and the checkout link
+
+Set `POLAR_CHECKOUT_URL` and the extension shows an "Upgrade to Premium" button. Set `POLAR_ORGANIZATION_ID` and the hosted providers become paid-only. `POLAR_ENV` (`production` or `sandbox`) chooses which Polar is used, with `POLAR_SANDBOX_ORGANIZATION_ID` and `POLAR_SANDBOX_CHECKOUT_URL` for the sandbox. The full table and setup steps are in [API.md](API.md#paid-access-with-polar).
+
+## Users' own API keys
+
+Anyone can add their own OpenAI, DeepSeek or Anthropic key in the extension's Settings. Those chats go straight from the browser to the provider and never touch this server, so there is nothing to configure here.
+
 ## Free quota
 
 The extension includes 10 successful free chats per Chrome profile. Failed requests do not consume a chat. The quota is stored locally because the project has no database or account system.
