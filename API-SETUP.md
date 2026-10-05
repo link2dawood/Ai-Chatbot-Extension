@@ -55,6 +55,16 @@ Set `POLAR_CHECKOUT_URL` and the extension shows an "Upgrade to Premium" button.
 
 Anyone can add their own OpenAI, DeepSeek or Anthropic key in the extension's Settings. Those chats go straight from the browser to the provider and never touch this server, so there is nothing to configure here.
 
-## Free quota
+## Free allowance on the server
 
-The extension includes 10 successful free chats per Chrome profile. Failed requests do not consume a chat. The quota is stored locally because the project has no database or account system.
+With paid-only access on, visitors without a license get a few chats on one cheap model, counted on the server (details in [API.md](API.md#free-allowance)). It needs a small Redis store, because Vercel functions forget everything between requests:
+
+1. In Vercel open your project → **Storage** → **Create** → **Upstash Redis** (the free plan is enough), and connect it to the project. Vercel adds `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` (or the older `KV_REST_API_URL` / `KV_REST_API_TOKEN`) for you.
+2. Optionally set `FREE_CHAT_LIMIT` (default 10), `FREE_IP_DAILY_LIMIT` (default 40) and `FREE_PROVIDER` (default: the first of DeepSeek, OpenAI, Anthropic with a key).
+3. Redeploy. `GET /api/chat?info=1` should now show `"freeQuota": true`.
+
+Without the store there is no free tier: visitors get the paid-only message. Free chats are never counted in the extension when the server counts them.
+
+## Attachments
+
+Premium users can attach images, PDFs and text files. Images and PDFs need OpenAI or Anthropic; text files work with any provider. Nothing to configure: it uses the provider keys you already set. Limits and the sample payload are in [API.md](API.md#attachments-paid-users).

@@ -59,9 +59,15 @@
 
     <section class="composer-wrap">
       <div class="composer">
+        <div id="attachList" class="attach-list" hidden></div>
         <textarea id="inputText" rows="1" maxlength="6000" placeholder="Ask anything…"></textarea>
         <div class="composer-footer">
           <div class="composer-tools">
+            <button class="mini-button" id="attachBtn" type="button" title="Attach images, PDFs or text files (Premium)">
+              <svg viewBox="0 0 24 24"><path d="m21 11.5-8.6 8.6a5 5 0 0 1-7.1-7.1l8.9-8.9a3.4 3.4 0 0 1 4.8 4.8l-8.9 8.9a1.7 1.7 0 0 1-2.4-2.4l8.2-8.2"/></svg>
+              Attach
+            </button>
+            <input id="fileInput" type="file" multiple hidden>
             <button class="mini-button" id="insertBtn" type="button" title="Insert last reply into the active page field">
               <svg viewBox="0 0 24 24"><path d="M14 3h7v7M10 14 21 3M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
               Insert
@@ -133,7 +139,7 @@
       <div class="settings-card compact">
         <span class="settings-card-label">FREE PLAN</span>
         <strong>10 successful chats</strong>
-        <p>The free quota is saved in Chrome local storage on this browser.</p>
+        <p>Free chats are counted on our server for this browser. Premium and your own key have no limit.</p>
       </div>
       <div class="settings-card compact">
         <span class="settings-card-label">PRIVACY</span>

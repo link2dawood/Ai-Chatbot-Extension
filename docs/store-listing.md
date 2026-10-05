@@ -105,3 +105,10 @@ Saves data locally on the user's device in chrome.storage.local: settings (theme
 
 Also add one line to the listing text under "SIMPLE AND PRIVATE": `- Prefer your own account? Add your own OpenAI, DeepSeek or Anthropic key in Settings. It stays in your browser and goes only to that provider.`
 
+## Attachments and the server-side free allowance: store and privacy notes
+These ship in the same 2.6.0 package and need **no new permissions** (the file picker works without any).
+- **Privacy page:** add that Premium users may attach files; the files are sent through our server to the AI provider to answer, are not stored by us, and only the file names are kept in the local chat history. Also add that free chats are counted on our server against a random id made in the browser, plus a hashed IP address for abuse limits (kept for about two days).
+- **Data usage:** unchanged. "Personal communications" already covers messages and attached files.
+- **Listing text:** add under the features list: `- Premium: attach images, PDFs and text files to your chat.`
+- **Storage justification:** add "a random anonymous id used to count free chats".
+

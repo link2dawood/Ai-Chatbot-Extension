@@ -256,7 +256,7 @@ test("GET ?info=1 returns the public settings without calling any provider or Po
   stub(() => { throw new Error("no outbound calls expected"); });
   const res = await call({ method: "GET", query: { info: "1" } });
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, { ok: true, gated: true, environment: "production", upgradeUrl: "https://buy.polar.sh/polar_cl_live" });
+  assert.deepEqual(res.body, { ok: true, gated: true, environment: "production", upgradeUrl: "https://buy.polar.sh/polar_cl_live", freeQuota: false, freeLimit: null });
   assert.equal(calls.length, 0);
 
   process.env.POLAR_ENV = "sandbox";
@@ -264,7 +264,7 @@ test("GET ?info=1 returns the public settings without calling any provider or Po
   const sandbox = await call({ method: "GET", query: { info: "1" } });
   assert.equal(sandbox.body.environment, "sandbox");
   assert.equal(sandbox.body.upgradeUrl, "https://sandbox.polar.sh/checkout/test");
-  assert.equal(Object.keys(sandbox.body).sort().join(), "environment,gated,ok,upgradeUrl", "nothing secret is exposed");
+  assert.equal(Object.keys(sandbox.body).sort().join(), "environment,freeLimit,freeQuota,gated,ok,upgradeUrl", "nothing secret is exposed");
 });
 
 test("the 402 for a free user carries the checkout link for the active environment", async () => {

@@ -11,6 +11,7 @@
 // shape (status, code, message, hint) no matter which provider failed.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { promptWithTextFiles } from "./attachments.js";
 
 const CHECK_TIMEOUT_MS = 12000;
 const CHAT_TIMEOUT_MS = 50000;
@@ -173,22 +174,36 @@ const openai = {
     return { model: info?.id || model };
   },
 
-  async generate({ key, model, system, prompt }) {
+  async generate({ key, model, system, prompt, attachments = [] }) {
+    // Text files go into the prompt; images and PDFs become file inputs.
+    const text = promptWithTextFiles(prompt, attachments);
+    const files = attachments.filter(a => a.kind !== "text");
+    const input = files.length
+      ? [{
+          role: "user",
+          content: [
+            { type: "input_text", text },
+            ...files.map(f => f.kind === "image"
+              ? { type: "input_image", image_url: `data:${f.mime};base64,${f.data}` }
+              : { type: "input_file", filename: f.name, file_data: `data:${f.mime};base64,${f.data}` })
+          ]
+        }]
+      : text;
     const data = await request("openai", "https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       // gpt-5 models reason before answering, and reasoning tokens count
       // toward this limit; too small a value returns no visible text.
-      body: JSON.stringify({ model, instructions: system, input: prompt, max_output_tokens: 4000 })
+      body: JSON.stringify({ model, instructions: system, input, max_output_tokens: 4000 })
     }, { timeoutMs: CHAT_TIMEOUT_MS, stage: "chat" });
 
-    const text = (data.output || [])
+    const answer = (data.output || [])
       .flatMap(item => item.content || [])
       .filter(part => part.type === "output_text")
       .map(part => part.text)
       .join("")
       .trim();
-    if (!text) {
+    if (!answer) {
       const reason = data.incomplete_details?.reason;
       throw new ProviderError("openai", {
         status: 502,
@@ -199,7 +214,7 @@ const openai = {
           : "OpenAI returned an empty response."
       });
     }
-    return { text, usage: data.usage || null, model: data.model || model };
+    return { text: answer, usage: data.usage || null, model: data.model || model };
   }
 };
 
@@ -232,7 +247,11 @@ function chatCompletionsProvider(provider, { baseUrl, checkPath, modelsPath = nu
       return { model };
     },
 
-    async generate({ key, model, system, prompt }) {
+    async generate({ key, model, system, prompt, attachments = [] }) {
+      if (attachments.some(a => a.kind !== "text")) {
+        throw new ProviderError(provider, { status: 400, code: "attachments_unsupported", stage: "chat", message: `${PROVIDERS[provider].label} cannot read images or PDFs.` });
+      }
+      const content = promptWithTextFiles(prompt, attachments);
       const fullSystem = [baseSystem, system].filter(Boolean).join("\n\n");
       const data = await request(provider, `${baseUrl}/chat/completions`, {
         method: "POST",
@@ -241,7 +260,7 @@ function chatCompletionsProvider(provider, { baseUrl, checkPath, modelsPath = nu
           model,
           messages: [
             ...(fullSystem ? [{ role: "system", content: fullSystem }] : []),
-            { role: "user", content: prompt }
+            { role: "user", content }
           ],
           max_tokens: 4000
         })
@@ -289,14 +308,23 @@ function fromAnthropicError(error, stage) {
 // sent to the newer models that support them.
 const supportsFallbacks = (model) => /^claude-(fable|mythos|opus|sonnet)-[5-9]/.test(model);
 
-function anthropicRequest({ model, system, prompt, maxTokens }) {
+// Images and PDFs become content blocks placed before the text; text files go into the text.
+function userContent(prompt, attachments = []) {
+  if (!attachments.length) return prompt;
+  const blocks = attachments.filter(a => a.kind !== "text").map(a => a.kind === "image"
+    ? { type: "image", source: { type: "base64", media_type: a.mime, data: a.data } }
+    : { type: "document", source: { type: "base64", media_type: "application/pdf", data: a.data }, title: a.name });
+  return [...blocks, { type: "text", text: promptWithTextFiles(prompt, attachments) }];
+}
+
+function anthropicRequest({ model, system, prompt, maxTokens, attachments = [] }) {
   const effort = process.env.ANTHROPIC_EFFORT?.trim();
   return {
     model,
     max_tokens: maxTokens,
     ...(system ? { system } : {}),
     ...(effort && supportsFallbacks(model) ? { output_config: { effort } } : {}),
-    messages: [{ role: "user", content: prompt }],
+    messages: [{ role: "user", content: userContent(prompt, attachments) }],
     // If the model declines for policy reasons, the API retries on its
     // server-defined fallback model within the same call.
     ...(supportsFallbacks(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {})
@@ -325,11 +353,11 @@ const anthropic = {
     return { model: info?.id || model };
   },
 
-  async generate({ key, model, system, prompt }) {
+  async generate({ key, model, system, prompt, attachments = [] }) {
     let response;
     try {
       response = await anthropicClient(key).beta.messages.create(
-        anthropicRequest({ model, system, prompt, maxTokens: 16000 })
+        anthropicRequest({ model, system, prompt, maxTokens: 16000, attachments })
       );
     } catch (error) {
       throw fromAnthropicError(error, "chat");
@@ -354,15 +382,21 @@ const anthropic = {
 
 const ADAPTERS = { openai, deepseek, anthropic, v0 };
 
+// Providers whose models read images and PDFs. DeepSeek and v0 take text only.
+export const FILE_PROVIDERS = ["openai", "anthropic"];
+export const canReadFiles = (provider) => FILE_PROVIDERS.includes(provider);
+
 // Resolve which provider handles a chat: explicit request → AI_PROVIDER → first configured.
-export function resolveProvider(requested, env = process.env) {
+// With images or PDFs ("needsFiles"), "auto" only considers providers that can read them.
+export function resolveProvider(requested, env = process.env, { needsFiles = false } = {}) {
   if (requested && requested !== "auto") {
     if (!PROVIDERS[requested]) throw new ProviderError(requested, { status: 400, code: "unknown_provider", message: `Unknown provider "${requested}". Use one of: ${PROVIDER_IDS.join(", ")}.` });
     return requested;
   }
+  const usable = (id) => isConfigured(id, env) && (!needsFiles || canReadFiles(id));
   const preferred = typeof env.AI_PROVIDER === "string" ? env.AI_PROVIDER.trim().toLowerCase() : "";
-  if (preferred && PROVIDERS[preferred] && isConfigured(preferred, env)) return preferred;
-  return PROVIDER_IDS.find(id => isConfigured(id, env)) || null;
+  if (preferred && PROVIDERS[preferred] && usable(preferred)) return preferred;
+  return PROVIDER_IDS.find(usable) || null;
 }
 
 function notConfigured(provider) {
@@ -403,9 +437,9 @@ export async function checkProvider(provider, { verify = false, env = process.en
   }
 }
 
-export async function generate(provider, { system, prompt, env = process.env }) {
+export async function generate(provider, { system, prompt, attachments = [], env = process.env }) {
   const { key } = readKey(provider, env);
   if (!key) throw notConfigured(provider);
   const model = readModel(provider, env);
-  return { provider, ...(await ADAPTERS[provider].generate({ key, model, system, prompt })) };
+  return { provider, ...(await ADAPTERS[provider].generate({ key, model, system, prompt, attachments })) };
 }

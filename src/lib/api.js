@@ -8,13 +8,19 @@ export const PROVIDER_OPTIONS = [
   { id: "v0", label: "v0" }
 ];
 
-export async function sendAssistantRequest({ prompt, system, provider, licenseKey, signal }) {
+export async function sendAssistantRequest({ prompt, system, provider, licenseKey, clientId, attachments, signal }) {
   let response;
   try {
     response = await fetch(API_ENDPOINT, {
       method: "POST",
-      headers: licenseHeaders(licenseKey, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ prompt, system, provider: provider || "auto" }),
+      headers: requestHeaders({ licenseKey, clientId }, { "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        prompt,
+        system,
+        provider: provider || "auto",
+        // Only what the server needs, never the file sizes or anything local.
+        ...(attachments?.length ? { attachments: attachments.map(({ name, mime, data }) => ({ name, mime, data })) } : {})
+      }),
       signal
     });
   } catch (cause) {
@@ -39,13 +45,14 @@ export async function sendAssistantRequest({ prompt, system, provider, licenseKe
     error.hint = data?.hint || null;
     error.code = data?.code || null;
     error.upgradeUrl = data?.upgradeUrl || null;
+    error.quota = data?.quota || null;
     error.retryAfter = response.headers.get("retry-after");
     throw error;
   }
 
   const text = data?.text?.trim();
   if (!text) throw new Error("The assistant returned an empty response.");
-  return { text, usage: data?.usage || null, provider: data?.provider || null, model: data?.model || null };
+  return { text, usage: data?.usage || null, provider: data?.provider || null, model: data?.model || null, quota: data?.quota || null };
 }
 
 // Returns the server's per-provider report:
@@ -58,7 +65,7 @@ export async function checkProviders({ provider, verify = true, licenseKey } = {
 
   let response;
   try {
-    response = await fetch(url, { method: "GET", headers: licenseHeaders(licenseKey) });
+    response = await fetch(url, { method: "GET", headers: requestHeaders({ licenseKey }) });
   } catch (cause) {
     throw unreachable(cause);
   }
@@ -86,15 +93,32 @@ export async function fetchServerInfo() {
     const data = await response.json();
     let upgradeUrl = null;
     try { upgradeUrl = data.upgradeUrl && new URL(data.upgradeUrl).protocol === "https:" ? data.upgradeUrl : null; } catch { /* ignore a malformed link */ }
-    return { gated: Boolean(data.gated), environment: data.environment === "sandbox" ? "sandbox" : "production", upgradeUrl };
+    return { gated: Boolean(data.gated), environment: data.environment === "sandbox" ? "sandbox" : "production", upgradeUrl, freeQuota: Boolean(data.freeQuota), freeLimit: Number(data.freeLimit) || null };
   } catch {
     return null;
   }
 }
 
-function licenseHeaders(licenseKey, headers = {}) {
+// How much of the server-side free allowance this browser has used.
+// Returns { used, limit, remaining }, or null when the server does not count free chats.
+export async function fetchQuota({ clientId }) {
+  if (!clientId) return null;
+  try {
+    const url = new URL(API_ENDPOINT);
+    url.searchParams.set("quota", "1");
+    const response = await fetch(url, { method: "GET", headers: requestHeaders({ clientId }) });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.enabled ? { used: data.used, limit: data.limit, remaining: data.remaining } : null;
+  } catch {
+    return null;
+  }
+}
+
+// X-License-Key proves a paid plan; X-Client-Id is a random id made on first run, used to count free chats.
+function requestHeaders({ licenseKey, clientId } = {}, headers = {}) {
   const key = typeof licenseKey === "string" ? licenseKey.trim() : "";
-  return key ? { ...headers, "X-License-Key": key } : headers;
+  return { ...headers, ...(key ? { "X-License-Key": key } : {}), ...(clientId ? { "X-Client-Id": clientId } : {}) };
 }
 
 function unreachable(cause) {

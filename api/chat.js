@@ -14,9 +14,16 @@
 // users only: POST needs a valid Polar license key in the X-License-Key
 // header, and GET ?verify=1 (which spends tokens) needs one too. See
 // server/entitlement.js.
+//
+// Visitors without a license get a small free allowance, counted on the server
+// (server/quota.js) and served by one cheap provider, when the counter store is
+// configured. Attachments (images, PDFs, text files) are for paid users only.
 
-import { PROVIDERS, PROVIDER_IDS, ProviderError, checkProvider, generate, isConfigured, resolveProvider } from "../server/providers.js";
+import { PROVIDERS, PROVIDER_IDS, ProviderError, canReadFiles, checkProvider, generate, isConfigured, resolveProvider } from "../server/providers.js";
 import { denial, entitlementFor, gatingEnabled, polarEnvironment, upgradeUrl } from "../server/entitlement.js";
+import { AttachmentError, validateAttachments } from "../server/attachments.js";
+import { needsVision } from "../src/lib/attachments.js";
+import { QuotaError, freeLimit, pickFreeProvider, readClientId, readIp, refund, reserve, storeConfigured, usage } from "../server/quota.js";
 
 const MAX_PROMPT = 6000;
 const MAX_SYSTEM = 4000;
@@ -42,7 +49,28 @@ function queryParam(req, name) {
 // Cheap, public settings for the extension (no provider calls, no secrets):
 // where the Upgrade button goes and whether Polar is in test mode.
 function handleInfo(res) {
-  return send(res, 200, { ok: true, gated: gatingEnabled(), environment: polarEnvironment(), upgradeUrl: upgradeUrl() });
+  const freeQuota = gatingEnabled() && storeConfigured();
+  return send(res, 200, {
+    ok: true,
+    gated: gatingEnabled(),
+    environment: polarEnvironment(),
+    upgradeUrl: upgradeUrl(),
+    freeQuota,
+    freeLimit: freeQuota ? freeLimit() : null
+  });
+}
+
+// How much of the free allowance this device has used (needs the X-Client-Id header).
+async function handleQuota(req, res) {
+  if (!(gatingEnabled() && storeConfigured())) return send(res, 200, { ok: true, enabled: false });
+  const clientId = readClientId(req);
+  if (!clientId) return send(res, 400, { ok: false, code: "client_id_required", error: "A client id is required." });
+  try {
+    return send(res, 200, { ok: true, enabled: true, ...(await usage(clientId)) });
+  } catch (error) {
+    if (error instanceof QuotaError) return send(res, 503, { ok: false, code: error.code, error: error.message });
+    throw error;
+  }
 }
 
 async function handleHealth(req, res) {
@@ -76,6 +104,8 @@ async function handleHealth(req, res) {
   });
 }
 
+const quotaBody = (r) => ({ used: r.used, limit: r.limit, remaining: r.remaining });
+
 async function handleChat(req, res) {
   const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
   const system = typeof req.body?.system === "string" ? req.body.system.trim() : "";
@@ -84,36 +114,102 @@ async function handleChat(req, res) {
   if (prompt.length > MAX_PROMPT) return send(res, 413, { ok: false, error: "Prompt is too long." });
   if (system.length > MAX_SYSTEM) return send(res, 413, { ok: false, error: "System prompt is too long." });
 
+  let attachments;
+  try {
+    attachments = validateAttachments(req.body?.attachments);
+  } catch (error) {
+    if (error instanceof AttachmentError) return send(res, error.status, { ok: false, code: error.code, error: error.message });
+    throw error;
+  }
+
   const entitlement = await entitlementFor(req);
-  if (!entitlement.entitled) {
+  // A license that was sent but is not good is its own error, not a free visitor.
+  if (entitlement.gated && !entitlement.entitled && entitlement.reason !== "missing") {
     const { status, body } = denial(entitlement.reason);
     return send(res, status, body);
   }
+  const paid = entitlement.gated && entitlement.entitled;
+
+  if (attachments.length && !paid) {
+    return send(res, 402, {
+      ok: false,
+      code: "attachments_paid",
+      error: "Attaching files is a Premium feature. Upgrade to add images, PDFs and text files to your chat.",
+      upgradeUrl: upgradeUrl()
+    });
+  }
+
+  // A visitor without a license: the free allowance, counted on the server.
+  let free = null;
+  if (entitlement.gated && !entitlement.entitled) {
+    const clientId = readClientId(req);
+    if (!storeConfigured() || !clientId) {
+      const { status, body } = denial("missing");
+      return send(res, status, body);
+    }
+    free = { clientId, ip: readIp(req) };
+  }
 
   let provider = null;
+  let reservation = null;
   try {
-    provider = resolveProvider(requested);
-    if (!provider) {
-      return send(res, 503, {
-        ok: false,
-        upstreamCode: "not_configured",
-        error: "No AI provider is configured on Vercel.",
-        hint: `Set one of ${PROVIDER_IDS.map(id => PROVIDERS[id].keyEnv).join(", ")} and redeploy.`
-      });
-    }
-    if (!isConfigured(provider)) {
-      return send(res, 503, {
-        ok: false,
-        provider,
-        upstreamCode: "not_configured",
-        error: `${PROVIDERS[provider].label} is not configured on Vercel.`,
-        hint: `Set ${PROVIDERS[provider].keyEnv} and redeploy, or pick another provider.`
-      });
+    if (free) {
+      // Free chats always use the one cheap provider, whatever the extension asked for.
+      provider = pickFreeProvider(id => isConfigured(id));
+      if (!provider) return send(res, 503, { ok: false, upstreamCode: "not_configured", error: "The free allowance has no AI provider configured.", hint: "Set FREE_PROVIDER or a provider key on Vercel." });
+      try {
+        reservation = await reserve(free.clientId, free.ip);
+      } catch (error) {
+        if (error instanceof QuotaError) return send(res, 503, { ok: false, code: error.code, error: error.message });
+        throw error;
+      }
+      if (!reservation.ok) {
+        return send(res, 402, {
+          ok: false,
+          code: reservation.reason === "ip" ? "free_limit_ip" : "free_limit_reached",
+          error: reservation.reason === "ip"
+            ? "Too many free chats have been used from this network today. Try again tomorrow, or upgrade."
+            : `You have used your ${reservation.limit} free chats.`,
+          quota: quotaBody(reservation),
+          upgradeUrl: upgradeUrl()
+        });
+      }
+    } else {
+      const files = needsVision(attachments);
+      provider = resolveProvider(requested, process.env, { needsFiles: files });
+      if (!provider) {
+        return send(res, 503, {
+          ok: false,
+          upstreamCode: "not_configured",
+          error: files ? "No provider that can read images or PDFs is configured." : "No AI provider is configured on Vercel.",
+          hint: files ? "Set OPENAI_API_KEY or ANTHROPIC_API_KEY on Vercel and redeploy." : `Set one of ${PROVIDER_IDS.map(id => PROVIDERS[id].keyEnv).join(", ")} and redeploy.`
+        });
+      }
+      if (!isConfigured(provider)) {
+        return send(res, 503, {
+          ok: false,
+          provider,
+          upstreamCode: "not_configured",
+          error: `${PROVIDERS[provider].label} is not configured on Vercel.`,
+          hint: `Set ${PROVIDERS[provider].keyEnv} and redeploy, or pick another provider.`
+        });
+      }
+      if (files && !canReadFiles(provider)) {
+        return send(res, 400, {
+          ok: false,
+          provider,
+          code: "attachments_unsupported",
+          error: `${PROVIDERS[provider].label} cannot read images or PDFs.`,
+          hint: "Choose OpenAI or Anthropic (or Auto) to attach images and PDFs. Text files work with every provider."
+        });
+      }
     }
 
-    const result = await generate(provider, { system: system || DEFAULT_SYSTEM, prompt });
-    return send(res, 200, { ok: true, ...result });
+    const result = await generate(provider, { system: system || DEFAULT_SYSTEM, prompt, attachments });
+    return send(res, 200, { ok: true, ...result, ...(reservation ? { quota: quotaBody(reservation) } : {}) });
   } catch (error) {
+    // The model call failed, so the free chat is given back.
+    if (reservation?.ok) await refund(free.clientId, free.ip);
     const err = error instanceof ProviderError ? error : new ProviderError(provider || "unknown", { message: error?.message });
     console.error("[Smart Chat API] Chat request failed", {
       provider: err.provider,
@@ -139,7 +235,11 @@ async function handleChat(req, res) {
 export default async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method === "GET") return queryParam(req, "info") ? handleInfo(res) : handleHealth(req, res);
+  if (req.method === "GET") {
+    if (queryParam(req, "info")) return handleInfo(res);
+    if (queryParam(req, "quota")) return handleQuota(req, res);
+    return handleHealth(req, res);
+  }
   if (req.method === "POST") return handleChat(req, res);
   res.setHeader("Allow", "GET, POST, OPTIONS");
   return send(res, 405, { ok: false, error: "Method not allowed." });
