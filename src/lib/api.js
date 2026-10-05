@@ -1,14 +1,24 @@
+// The only thing the extension needs to know about the backend is where it lives. Everything
+// else (plans, limits, prompts, prices, which AI answers) is decided by the server and read from
+// GET ?config=1, so the backend can change without a new extension release. See config.js.
 export const API_ENDPOINT = "https://ai-chatbot-extension.vercel.app/api/chat";
 
-export const PROVIDER_OPTIONS = [
-  { id: "auto", label: "Auto (server default)" },
-  { id: "openai", label: "OpenAI" },
-  { id: "deepseek", label: "DeepSeek" },
-  { id: "anthropic", label: "Anthropic" },
-  { id: "v0", label: "v0" }
-];
+// Sent as X-Extension-Version so the server can ask an old extension to update.
+let clientVersion = "";
+export function setClientVersion(version) { clientVersion = String(version || ""); }
 
-export async function sendAssistantRequest({ prompt, system, provider, licenseKey, clientId, attachments, signal }) {
+// X-License-Key proves a paid plan; X-Client-Id is a random id made on first run, used to count free messages.
+function requestHeaders({ licenseKey, clientId } = {}, headers = {}) {
+  const key = typeof licenseKey === "string" ? licenseKey.trim() : "";
+  return {
+    ...headers,
+    ...(key ? { "X-License-Key": key } : {}),
+    ...(clientId ? { "X-Client-Id": clientId } : {}),
+    ...(clientVersion ? { "X-Extension-Version": clientVersion } : {})
+  };
+}
+
+export async function sendAssistantRequest({ prompt, system, mode, quality, licenseKey, clientId, attachments, signal }) {
   let response;
   try {
     response = await fetch(API_ENDPOINT, {
@@ -16,8 +26,10 @@ export async function sendAssistantRequest({ prompt, system, provider, licenseKe
       headers: requestHeaders({ licenseKey, clientId }, { "Content-Type": "application/json" }),
       body: JSON.stringify({
         prompt,
+        // The server uses its own prompt for a known mode; `system` is only a fallback for servers that don't.
         system,
-        provider: provider || "auto",
+        mode,
+        quality: quality === "premium" ? "premium" : "standard",
         // Only what the server needs, never the file sizes or anything local.
         ...(attachments?.length ? { attachments: attachments.map(({ name, mime, data }) => ({ name, mime, data })) } : {})
       }),
@@ -55,74 +67,42 @@ export async function sendAssistantRequest({ prompt, system, provider, licenseKe
   return { text, usage: data?.usage || null, provider: data?.provider || null, model: data?.model || null, quota: data?.quota || null };
 }
 
-// Returns the server's per-provider report:
-// { ok, defaultProvider, providers: { openai: { ok, configured, model, error, hint, ... }, ... } }
-// A 503 still carries the report (it means no provider passed), so it is returned, not thrown.
-export async function checkProviders({ provider, verify = true, licenseKey } = {}) {
-  const url = new URL(API_ENDPOINT);
-  if (provider && provider !== "auto") url.searchParams.set("provider", provider);
-  if (verify) url.searchParams.set("verify", "1");
-
-  let response;
-  try {
-    response = await fetch(url, { method: "GET", headers: requestHeaders({ licenseKey }) });
-  } catch (cause) {
-    throw unreachable(cause);
-  }
-  const data = await response.json().catch(() => null);
-  if (data?.providers) return data;
-
-  console.error("[Smart Chat] Connection check failed", {
-    endpoint: API_ENDPOINT,
-    status: response.status,
-    statusText: response.statusText,
-    response: data
-  });
-  throw new Error(data?.error || `Service check failed (${response.status}). Is the latest api/chat.js deployed?`);
-}
-
-// Public settings from the server: where the Upgrade button goes and whether
-// Polar is in test mode. Cheap (no provider calls). Returns null when the
-// server can't be reached, so the panel still works offline.
-export async function fetchServerInfo() {
+// The server's settings, as the server sent them (config.js checks them). null when unreachable.
+export async function fetchConfig() {
   try {
     const url = new URL(API_ENDPOINT);
-    url.searchParams.set("info", "1");
-    const response = await fetch(url, { method: "GET" });
+    url.searchParams.set("config", "1");
+    const response = await fetch(url, { method: "GET", headers: requestHeaders(), signal: AbortSignal.timeout(8000) });
     if (!response.ok) return null;
-    const data = await response.json();
-    let upgradeUrl = null;
-    try { upgradeUrl = data.upgradeUrl && new URL(data.upgradeUrl).protocol === "https:" ? data.upgradeUrl : null; } catch { /* ignore a malformed link */ }
-    return { gated: Boolean(data.gated), environment: data.environment === "sandbox" ? "sandbox" : "production", upgradeUrl, freeQuota: Boolean(data.freeQuota), freeLimit: Number(data.freeLimit) || null };
+    return await response.json();
   } catch {
     return null;
   }
 }
 
-// How much of the server-side free allowance this browser has used.
-// Returns { used, limit, remaining }, or null when the server does not count free chats.
-export async function fetchQuota({ clientId }) {
-  if (!clientId) return null;
+// This browser's usage, from the server.
+//   { status: "ok", quota }         the numbers
+//   { status: "off" }               the server isn't counting (paid-only access is off)
+//   { status: "denied", code, message }   a license that was sent is not valid
+//   { status: "error" }             the server couldn't be reached or answered badly
+export async function fetchQuota({ clientId, licenseKey } = {}) {
   try {
     const url = new URL(API_ENDPOINT);
     url.searchParams.set("quota", "1");
-    const response = await fetch(url, { method: "GET", headers: requestHeaders({ clientId }) });
-    if (!response.ok) return null;
-    const data = await response.json();
-    return data.enabled ? { used: data.used, limit: data.limit, remaining: data.remaining } : null;
+    const response = await fetch(url, { method: "GET", headers: requestHeaders({ clientId, licenseKey }), signal: AbortSignal.timeout(8000) });
+    const data = await response.json().catch(() => null);
+    if (response.status === 401 || response.status === 402) return { status: "denied", code: data?.code || null, message: data?.error || "That license was not accepted." };
+    if (!response.ok || !data) return { status: "error" };
+    if (!data.enabled) return { status: "off" };
+    const { ok, enabled, ...quota } = data;
+    return { status: "ok", quota };
   } catch {
-    return null;
+    return { status: "error" };
   }
 }
 
-// X-License-Key proves a paid plan; X-Client-Id is a random id made on first run, used to count free chats.
-function requestHeaders({ licenseKey, clientId } = {}, headers = {}) {
-  const key = typeof licenseKey === "string" ? licenseKey.trim() : "";
-  return { ...headers, ...(key ? { "X-License-Key": key } : {}), ...(clientId ? { "X-Client-Id": clientId } : {}) };
-}
-
 function unreachable(cause) {
-  const error = new Error(`Could not reach ${new URL(API_ENDPOINT).host}. Check your internet connection, and that API_ENDPOINT in src/lib/api.js and host_permissions in manifest.json match your Vercel deployment.`);
+  const error = new Error(`Could not reach ${new URL(API_ENDPOINT).host}. Check your internet connection and try again.`);
   error.status = 0;
   error.cause = cause;
   return error;

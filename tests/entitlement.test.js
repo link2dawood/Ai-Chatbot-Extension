@@ -7,7 +7,7 @@ import { MODE_IDS, MODE_PROMPTS, systemPromptFor } from "../src/lib/prompts.js";
 
 const VARS = ["OPENAI_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY", "V0_API_KEY", "AI_PROVIDER",
   "OPENAI_MODEL", "POLAR_ORGANIZATION_ID", "POLAR_CHECKOUT_URL", "POLAR_SERVER", "POLAR_ENV",
-  "POLAR_SANDBOX_ORGANIZATION_ID", "POLAR_SANDBOX_CHECKOUT_URL"];
+  "POLAR_SANDBOX_ORGANIZATION_ID", "POLAR_SANDBOX_CHECKOUT_URL", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"];
 const ORG = "11111111-2222-3333-4444-555555555555";
 const realFetch = globalThis.fetch;
 let saved;
@@ -36,6 +36,8 @@ function stub(polar) {
   globalThis.fetch = async (input, init = {}) => {
     const url = String(input);
     calls.push({ url, init });
+    // The store that counts usage: every counter reads as 1 used.
+    if (url.startsWith("https://redis.example.com/pipeline")) return json(200, JSON.parse(init.body).map(c => ({ result: c[0] === "PING" ? "PONG" : c[0] === "GET" ? null : 1 })));
     if (url.includes("/license-keys/validate")) return polar(JSON.parse(init.body));
     if (url === "https://api.openai.com/v1/responses") {
       return json(200, { model: "gpt-5-nano", output: [{ content: [{ type: "output_text", text: "Hello from the model" }] }] });
@@ -52,6 +54,8 @@ beforeEach(() => {
   saved = Object.fromEntries(VARS.map(k => [k, process.env[k]]));
   VARS.forEach(k => delete process.env[k]);
   process.env.OPENAI_API_KEY = "sk-proj-abc";
+  process.env.UPSTASH_REDIS_REST_URL = "https://redis.example.com";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "tok";
   calls = [];
   clearLicenseCache();
 });
@@ -251,6 +255,7 @@ test("only https checkout links are handed out", () => {
 });
 
 test("GET ?info=1 returns the public settings without calling any provider or Polar", async () => {
+  delete process.env.UPSTASH_REDIS_REST_URL; delete process.env.UPSTASH_REDIS_REST_TOKEN; // no counter store here
   process.env.POLAR_ORGANIZATION_ID = ORG;
   process.env.POLAR_CHECKOUT_URL = "https://buy.polar.sh/polar_cl_live";
   stub(() => { throw new Error("no outbound calls expected"); });

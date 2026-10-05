@@ -34,6 +34,7 @@
     </nav>
 
     <div class="quota-block">
+      <div id="updateBanner" class="update-banner" role="alert" hidden></div>
       <section class="quota-row" aria-live="polite">
         <div>
           <span class="quota-label" id="quotaLabel">Free plan</span>
@@ -63,6 +64,10 @@
         <textarea id="inputText" rows="1" maxlength="6000" placeholder="Ask anything…"></textarea>
         <div class="composer-footer">
           <div class="composer-tools">
+            <button class="mini-button quality-btn" id="qualityBtn" type="button" aria-pressed="false" hidden>
+              <svg viewBox="0 0 24 24"><path d="m12 3 2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.5 6.6 19.5l1.2-6L3.3 9.3l6.1-.7L12 3Z"/></svg>
+              <span id="qualityLabel">Premium</span>
+            </button>
             <button class="mini-button" id="attachBtn" type="button" title="Attach images, PDFs or text files (Premium)">
               <svg viewBox="0 0 24 24"><path d="m21 11.5-8.6 8.6a5 5 0 0 1-7.1-7.1l8.9-8.9a3.4 3.4 0 0 1 4.8 4.8l-8.9 8.9a1.7 1.7 0 0 1-2.4-2.4l8.2-8.2"/></svg>
               Attach
@@ -101,14 +106,11 @@
     </div>
     <div class="settings-body">
       <div class="settings-card">
-        <span class="settings-card-label">AI SERVICE</span>
-        <strong>Vercel hosted</strong>
-        <p>Our hosted AI service, used for Free and Premium chats. The provider keys behind it stay on the server and are never sent to your browser.</p>
-        <label class="field-label" for="providerSelect">Provider</label>
-        <select id="providerSelect" class="select-input"></select>
-        <button id="testConnection" class="secondary-button" type="button">Check all connections</button>
+        <span class="settings-card-label">SERVICE</span>
+        <strong>Smart Chat service</strong>
+        <p>Plans, limits and prompts are loaded from our service, so they stay up to date without an extension update.</p>
+        <button id="testConnection" class="secondary-button" type="button">Check connection</button>
         <p id="settingsStatus" class="settings-status" role="status"></p>
-        <ul id="providerResults" class="provider-results" aria-live="polite"></ul>
       </div>
       <div class="settings-card" id="ownKeyCard">
         <span class="settings-card-label">YOUR OWN API KEY</span>
@@ -136,10 +138,11 @@
         <a id="upgradeLink" class="upgrade-link" href="#" target="_blank" rel="noopener" hidden>Upgrade to Premium Access</a>
         <p id="envNote" class="settings-status" hidden>Test mode: purchases use Polar's sandbox, so only sandbox license keys work.</p>
       </div>
-      <div class="settings-card compact">
-        <span class="settings-card-label">FREE PLAN</span>
-        <strong>10 successful chats</strong>
-        <p>Free chats are counted on our server for this browser. Premium and your own key have no limit.</p>
+      <div class="settings-card" id="usageCard">
+        <span class="settings-card-label">YOUR PLAN</span>
+        <strong id="usagePlan">Free</strong>
+        <p id="usageDetail"></p>
+        <ul id="usagePerks" class="perk-list"></ul>
       </div>
       <div class="settings-card compact">
         <span class="settings-card-label">PRIVACY</span>

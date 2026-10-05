@@ -1,31 +1,32 @@
-// Server-side free allowance.
+// Usage counting, on the server.
 //
-// With paid-only access on, a visitor without a license gets a small number of
-// chats on one cheap model. The count lives on the server, in a Redis store, so
-// clearing the extension's data does not reset it.
+// Two plans are counted, both in a Redis store so clearing the extension (or sharing
+// it) does not reset anything:
+//   free  per device per UTC day   (FREE_DAILY_LIMIT), plus a per-IP daily cap (FREE_IP_DAILY_LIMIT)
+//   pro   per license per UTC month (PRO_MONTHLY_LIMIT), plus a premium-request count (PRO_PREMIUM_MONTHLY_LIMIT)
+// Limits and names live in server/settings.js.
 //
-// Who is counted: the extension makes a random id on first run and sends it as
-// X-Client-Id. Anyone can make a new id by reinstalling, so a second counter
-// limits each IP address per day, which caps what a script can get by resetting.
-// This is a speed bump, not an identity check. Real accounts would be needed for
-// a hard limit.
+// Who is counted: free visitors by a random id the extension makes on first run
+// (X-Client-Id). Anyone can make a new id by reinstalling, so each IP address also has
+// a daily cap, which limits what a script can get by resetting. That is a speed bump,
+// not an identity check. Paid users are counted by their license key, so sharing a key
+// shares one allowance.
+//
+// A message is reserved before the model is called and given back if the call fails.
+// Ids, IPs and keys are stored only as keyed hashes, never raw.
 //
 // Storage: Upstash Redis over its REST API (no dependency). In Vercel add
 // Storage → Upstash Redis; it sets these variables:
 //   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN   (or the KV_REST_API_URL / KV_REST_API_TOKEN names,
 //   with or without a prefix such as chat_assistant_db_)
-//
-// Settings:
-//   FREE_CHAT_LIMIT       free chats per device, for life (default 10)
-//   FREE_IP_DAILY_LIMIT   free chats per IP address per day (default 40)
-//   FREE_PROVIDER         provider that serves free chats (default: first configured of deepseek, openai, anthropic)
-//   QUOTA_SALT            optional secret used to hash ids and IPs (defaults to the store token)
+//   QUOTA_SALT            optional secret used to hash ids, IPs and keys (defaults to the store token)
 
 import { createHmac } from "node:crypto";
+import { limits, periodKey, resetsAt } from "./settings.js";
 
 const TIMEOUT_MS = 6000;
 const DAY_SECONDS = 2 * 24 * 60 * 60;
-export const FREE_PROVIDER_ORDER = ["deepseek", "openai", "anthropic"];
+const MONTH_SECONDS = 40 * 24 * 60 * 60;
 
 const CLIENT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -52,10 +53,6 @@ function store(env) {
 
 export const storeConfigured = (env = process.env) => Boolean(store(env));
 
-const intSetting = (value, fallback) => { const n = Number.parseInt(value, 10); return Number.isFinite(n) && n >= 0 ? n : fallback; };
-export const freeLimit = (env = process.env) => intSetting(env.FREE_CHAT_LIMIT, 10);
-const ipDailyLimit = (env) => intSetting(env.FREE_IP_DAILY_LIMIT, 40);
-
 export function readClientId(req) {
   const header = req.headers?.["x-client-id"];
   const value = (Array.isArray(header) ? header[0] : header)?.trim();
@@ -68,14 +65,13 @@ export function readIp(req) {
   return req.headers?.["x-real-ip"] || first || req.socket?.remoteAddress || "unknown";
 }
 
-// Ids and IPs are never stored raw. The hash is keyed with a secret (QUOTA_SALT, or the
-// store's own token), because a hash with a public key can be brute-forced for IPv4 addresses.
+// The hash is keyed with a secret (QUOTA_SALT, or the store's own token), because a hash with
+// a public key can be brute-forced for IPv4 addresses.
 const hash = (env, value) => createHmac("sha256", env.QUOTA_SALT || store(env)?.token || "smart-chat").update(String(value)).digest("hex").slice(0, 32);
-const today = () => new Date().toISOString().slice(0, 10);
 
 async function pipeline(env, commands) {
   const s = store(env);
-  if (!s) throw new QuotaError("The free allowance is not configured.");
+  if (!s) throw new QuotaError("Usage counting is not configured.");
   let response;
   try {
     response = await fetch(`${s.url}/pipeline`, {
@@ -86,47 +82,78 @@ async function pipeline(env, commands) {
     });
   } catch (error) {
     console.error("[Smart Chat API] Quota store unreachable", { name: error?.name, message: error?.message });
-    throw new QuotaError("The free allowance is unavailable right now.");
+    throw new QuotaError("Usage counting is unavailable right now. Please try again in a moment.");
   }
   const data = await response.json().catch(() => null);
   if (!response.ok || !Array.isArray(data) || data.some(item => item?.error)) {
     console.error("[Smart Chat API] Quota store error", { status: response.status, error: Array.isArray(data) ? data.find(i => i?.error)?.error : null });
-    throw new QuotaError("The free allowance is unavailable right now.");
+    throw new QuotaError("Usage counting is unavailable right now. Please try again in a moment.");
   }
   return data.map(item => item.result);
 }
 
-const deviceKey = (env, clientId) => `fq:${hash(env, clientId)}`;
-const ipKey = (env, ip) => `fip:${hash(env, ip)}:${today()}`;
+// ---- who is counted, and which counters apply ----
+//   who = { plan: "free", clientId, ip }  or  { plan: "pro", license }
 
-// How many free chats this device has used.
-export async function usage(clientId, { env = process.env } = {}) {
-  const [used] = await pipeline(env, [["GET", deviceKey(env, clientId)]]);
-  const limit = freeLimit(env);
-  const n = Math.max(0, Number(used) || 0);
-  return { used: Math.min(n, limit), limit, remaining: Math.max(0, limit - n) };
-}
-
-// Takes one free chat before the model is called. { ok: true, used, limit, remaining }
-// or { ok: false, reason: "limit" | "ip", used, limit, remaining }.
-export async function reserve(clientId, ip, { env = process.env } = {}) {
-  const limit = freeLimit(env);
-  const dKey = deviceKey(env, clientId);
-  const iKey = ipKey(env, ip);
-  const [deviceCount, ipCount] = await pipeline(env, [["INCR", dKey], ["INCR", iKey], ["EXPIRE", iKey, DAY_SECONDS]]);
-  const used = Number(deviceCount);
-
-  const over = used > limit ? "limit" : Number(ipCount) > ipDailyLimit(env) ? "ip" : null;
-  if (over) {
-    await pipeline(env, [["DECR", dKey], ["DECR", iKey]]).catch(() => {});
-    return { ok: false, reason: over, used: Math.min(used - 1, limit), limit, remaining: 0 };
+function counters(who, { premium = false, env, now }) {
+  const l = limits(env);
+  if (who.plan === "pro") {
+    const month = periodKey("pro", now);
+    const id = hash(env, `license:${who.license}`);
+    return [
+      { name: "monthly", key: `pm:${id}:${month}`, limit: l.proMonthly, ttl: MONTH_SECONDS },
+      ...(premium ? [{ name: "premium", key: `pp:${id}:${month}`, limit: l.proPremiumMonthly, ttl: MONTH_SECONDS }] : [])
+    ];
   }
-  return { ok: true, used, limit, remaining: limit - used };
+  const day = periodKey("free", now);
+  return [
+    { name: "daily", key: `fd:${hash(env, who.clientId)}:${day}`, limit: l.freeDaily, ttl: DAY_SECONDS },
+    { name: "ip", key: `fip:${hash(env, who.ip)}:${day}`, limit: l.freeIpDaily, ttl: DAY_SECONDS }
+  ];
 }
 
-// Gives the chat back when the model call failed, so a failure costs nothing.
-export async function refund(clientId, ip, { env = process.env } = {}) {
-  await pipeline(env, [["DECR", deviceKey(env, clientId)], ["DECR", ipKey(env, ip)]]).catch(() => {});
+const clamp = (n, limit) => Math.max(0, Math.min(Number(n) || 0, limit));
+const dimension = (used, limit) => ({ used: clamp(used, limit), limit, remaining: Math.max(0, limit - clamp(used, limit)) });
+
+// What the extension shows. `counts` maps counter name → number used.
+function quotaFor(who, counts, { env, now }) {
+  const l = limits(env);
+  if (who.plan === "pro") {
+    return { plan: "pro", period: "month", resetsAt: resetsAt("pro", now), ...dimension(counts.monthly, l.proMonthly), premium: dimension(counts.premium, l.proPremiumMonthly) };
+  }
+  return { plan: "free", period: "day", resetsAt: resetsAt("free", now), ...dimension(counts.daily, l.freeDaily) };
+}
+
+// Reads the current counts without using anything.
+export async function usageFor(who, { env = process.env, now = new Date() } = {}) {
+  const entries = counters(who, { premium: true, env, now }).filter(e => e.name !== "ip");
+  const values = await pipeline(env, entries.map(e => ["GET", e.key]));
+  const counts = Object.fromEntries(entries.map((e, i) => [e.name, Number(values[i]) || 0]));
+  return quotaFor(who, counts, { env, now });
+}
+
+// Takes one message before the model is called.
+//   { ok: true, quota }                                  it is reserved
+//   { ok: false, reason: "daily"|"ip"|"monthly"|"premium", quota }   a limit was reached; nothing is used
+export async function reserveChat(who, { premium = false, env = process.env, now = new Date() } = {}) {
+  const entries = counters(who, { premium, env, now });
+  const commands = entries.flatMap(e => [["INCR", e.key], ["EXPIRE", e.key, e.ttl]]);
+  const results = await pipeline(env, commands);
+  const used = Object.fromEntries(entries.map((e, i) => [e.name, Number(results[i * 2])]));
+
+  const over = entries.find(e => used[e.name] > e.limit);
+  if (over) {
+    await pipeline(env, entries.map(e => ["DECR", e.key])).catch(() => {});
+    const before = Object.fromEntries(entries.map(e => [e.name, used[e.name] - 1]));
+    return { ok: false, reason: over.name, quota: quotaFor(who, before, { env, now }) };
+  }
+  return { ok: true, quota: quotaFor(who, used, { env, now }) };
+}
+
+// Gives the message back when the model call failed, so a failure costs nothing.
+export async function refundChat(who, { premium = false, env = process.env, now = new Date() } = {}) {
+  const entries = counters(who, { premium, env, now });
+  await pipeline(env, entries.map(e => ["DECR", e.key])).catch(() => {});
 }
 
 // Is the store reachable and answering? Used by the connection report.
@@ -137,11 +164,4 @@ export async function ping({ env = process.env } = {}) {
   } catch {
     return false;
   }
-}
-
-// Which provider serves free chats: FREE_PROVIDER if configured, else the cheapest one with a key.
-export function pickFreeProvider(isConfigured, env = process.env) {
-  const named = (env.FREE_PROVIDER || "").trim().toLowerCase();
-  if (named && isConfigured(named)) return named;
-  return FREE_PROVIDER_ORDER.find(isConfigured) || null;
 }

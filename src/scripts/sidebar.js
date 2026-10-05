@@ -1,12 +1,11 @@
 import { renderMarkdown } from "../lib/markdown.js";
-import { MODE_PROMPTS } from "../lib/prompts.js";
-import { sendAssistantRequest, checkProviders, fetchQuota, fetchServerInfo, PROVIDER_OPTIONS } from "../lib/api.js";
+import { fetchConfig, fetchQuota, sendAssistantRequest, setClientVersion } from "../lib/api.js";
+import { DEFAULT_CONFIG, needsUpdate, normalizeConfig, systemPromptFor, upgradeLabel } from "../lib/config.js";
 import { ACCEPT, checkPicked, formatSize, needsVision, readAttachment } from "../lib/attachments.js";
 import { BYOK_PROVIDERS, BYOK_IDS, keyProblem, maskKey, sendOwnKeyRequest, testOwnKey } from "../lib/byok.js";
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const FREE_CHAT_LIMIT = 10;
 
 const MODES = {
   chat: {
@@ -14,7 +13,6 @@ const MODES = {
     title: "What can I help with?",
     description: "Ask a question or work through something without leaving the page.",
     placeholder: "Ask anything…",
-    system: MODE_PROMPTS.chat,
     starters: [
       ["Draft a reply", "Help me write a clear reply to this message: "],
       ["Make a plan", "Turn this into a simple action plan: "],
@@ -26,7 +24,6 @@ const MODES = {
     title: "Make it sound better.",
     description: "Improve clarity, tone and flow while keeping the original meaning.",
     placeholder: "Paste text to rewrite…",
-    system: MODE_PROMPTS.rewrite,
     starters: [
       ["Professional", "Rewrite this to sound professional and natural: "],
       ["Friendly", "Rewrite this to sound warm and friendly: "],
@@ -38,7 +35,6 @@ const MODES = {
     title: "Clean up the writing.",
     description: "Fix grammar, spelling and punctuation without changing your voice.",
     placeholder: "Paste text to correct…",
-    system: MODE_PROMPTS.grammar,
     starters: [
       ["Fix grammar", "Correct the grammar in this text without changing my tone: "],
       ["Polish wording", "Fix grammar and smooth any awkward wording: "],
@@ -50,7 +46,6 @@ const MODES = {
     title: "Pull out what matters.",
     description: "Turn long text into a concise summary you can scan quickly.",
     placeholder: "Paste text to summarize…",
-    system: MODE_PROMPTS.summarize,
     starters: [
       ["5 bullets", "Summarize this in 5 concise bullets: "],
       ["Key takeaways", "Give me the key takeaways from this: "],
@@ -62,7 +57,6 @@ const MODES = {
     title: "Make it easier to understand.",
     description: "Break down confusing text or ideas in plain language.",
     placeholder: "Paste or ask what to explain…",
-    system: MODE_PROMPTS.explain,
     starters: [
       ["Simple terms", "Explain this in simple terms: "],
       ["Step by step", "Explain this step by step: "],
@@ -71,14 +65,13 @@ const MODES = {
   }
 };
 
-const DEFAULT_SETTINGS = { theme: "light", mode: "chat", provider: "auto", licenseKey: "" };
+const DEFAULT_SETTINGS = { theme: "light", mode: "chat", quality: "standard", licenseKey: "" };
 let settings = { ...DEFAULT_SETTINGS };
 let history = [];
-let freeChatsUsed = 0;
+let config = DEFAULT_CONFIG; // plans, limits, copy, prompts and switches: from the server, with built-in defaults
+let quota = null; // this browser's usage as the server counts it: { plan, period, used, limit, remaining, resetsAt, premium? }
 let byok = null; // { provider, key, model, enabled }: the user's own API key, kept only in this browser
-let serverInfo = null; // { gated, environment, upgradeUrl, freeQuota } from the server
-let serverQuota = null; // { used, limit, remaining }: the free allowance as counted by the server (null = not counted there)
-let clientId = ""; // random id made on first run; the server counts free chats against it
+let clientId = ""; // random id made on first run; the server counts free messages against it
 let pendingFiles = []; // files attached to the message being written (Premium)
 let isLoading = false;
 let lastAssistantText = "";
@@ -90,27 +83,30 @@ const sendBtn = $("#sendBtn");
 const charCounter = $("#charCounter");
 const connectionLabel = $("#connectionLabel");
 const settingsPanel = $("#settingsPanel");
-const providerSelect = $("#providerSelect");
 
 function storageGet(keys) { return new Promise(resolve => chrome.storage.local.get(keys, resolve)); }
 function storageSet(data) { return new Promise(resolve => chrome.storage.local.set(data, resolve)); }
 
 async function init() {
-  const stored = await storageGet(["settings", "chatHistory", "freeChatsUsed", "byok", "clientId"]);
+  const stored = await storageGet(["settings", "chatHistory", "byok", "clientId", "configCache"]);
   clientId = typeof stored.clientId === "string" && stored.clientId ? stored.clientId : crypto.randomUUID();
   if (clientId !== stored.clientId) await storageSet({ clientId });
   settings = { ...DEFAULT_SETTINGS, ...(stored.settings || {}) };
   byok = stored.byok?.key && BYOK_PROVIDERS[stored.byok.provider] ? stored.byok : null;
   history = Array.isArray(stored.chatHistory) ? stored.chatHistory.slice(-50) : [];
-  freeChatsUsed = Math.max(0, Number(stored.freeChatsUsed) || 0);
+  setClientVersion(extensionVersion());
+  // The last settings the server sent (or the built-in ones), so the panel is right immediately.
+  config = normalizeConfig(stored.configCache);
   applySettingsToUI();
   renderHistory();
   renderByokCard();
-  updateQuotaUI();
+  applyConfig();
   updateComposer();
   bindEvents();
-  fetchServerInfo().then(applyServerInfo);
+  refreshConfig(); // the server's current settings, in the background
 }
+
+const extensionVersion = () => { try { return chrome.runtime.getManifest().version; } catch { return ""; } };
 
 function bindEvents() {
   sendBtn.addEventListener("click", sendCurrentMessage);
@@ -163,13 +159,7 @@ function bindEvents() {
     await storageSet({ byok });
     updateQuotaUI();
   });
-  providerSelect.addEventListener("change", async () => {
-    settings.provider = providerSelect.value;
-    await persistSettings();
-    $("#providerResults").innerHTML = "";
-    setSettingsStatus("", "");
-    updateConnectionButton();
-  });
+  $("#qualityBtn").addEventListener("click", onQualityClick);
   $("#copyBtn").addEventListener("click", copyLastReply);
   $("#insertBtn").addEventListener("click", insertLastReply);
   $("#clearBtn").addEventListener("click", clearChat);
@@ -189,24 +179,8 @@ function applySettingsToUI() {
   document.body.classList.toggle("dark", settings.theme === "dark");
   updateThemeIcon();
   updateModeUI();
-  providerSelect.innerHTML = PROVIDER_OPTIONS
-    .map(option => `<option value="${escapeAttr(option.id)}">${escapeText(option.label)}</option>`)
-    .join("");
-  if (!PROVIDER_OPTIONS.some(option => option.id === settings.provider)) settings.provider = "auto";
-  providerSelect.value = settings.provider;
-  updateConnectionButton();
   $("#licenseInput").value = settings.licenseKey || "";
   connectionLabel.textContent = "Ready";
-}
-
-function providerLabel(id) {
-  return PROVIDER_OPTIONS.find(option => option.id === id)?.label || id;
-}
-
-function updateConnectionButton() {
-  $("#testConnection").textContent = settings.provider === "auto"
-    ? "Check all connections"
-    : `Check ${providerLabel(settings.provider)} connection`;
 }
 
 function updateModeUI() {
@@ -260,42 +234,147 @@ function setLicenseStatus(message, type) {
   el.className = `settings-status${type ? ` ${type}` : ""}`;
 }
 
-// The Upgrade buttons appear as soon as the server tells us where to send people.
-function showUpgrade(url) {
-  if (url) serverInfo = { ...(serverInfo || { gated: false, environment: "production" }), upgradeUrl: url };
-  const target = serverInfo?.upgradeUrl || null;
+// ---- the server's settings ----
+
+// Loads the server's current settings, remembers them for next time, and applies them.
+async function refreshConfig() {
+  const raw = await fetchConfig();
+  if (!raw) return false;
+  config = normalizeConfig(raw);
+  await storageSet({ configCache: config });
+  applyConfig();
+  return true;
+}
+
+// Builds everything that depends on the settings. Safe to call at any time.
+function applyUpgradeLinks() {
+  const url = config.upgradeUrl;
   for (const id of ["#upgradeLink", "#upgradeBtn"]) {
     const link = $(id);
-    if (target) link.href = target;
-    link.hidden = !target;
+    if (url) link.href = url;
+    link.hidden = !url;
   }
+  $("#upgradeBtn").textContent = upgradeLabel(config);
 }
 
-function applyServerInfo(info) {
-  if (!info) return;
-  serverInfo = info;
-  showUpgrade(info.upgradeUrl);
-  $("#envNote").hidden = info.environment !== "sandbox";
-  if (info.freeQuota && !unlimited()) fetchQuota({ clientId }).then(quota => { serverQuota = quota; updateQuotaUI(); });
+function applyConfig() {
+  applyUpgradeLinks();
+  $("#envNote").hidden = config.environment !== "sandbox";
+
+  const outdated = needsUpdate(config, extensionVersion());
+  $("#updateBanner").hidden = !outdated;
+  $("#updateBanner").textContent = outdated ? config.updateMessage : "";
+
+  // Feature switches the server can flip without an extension release.
+  $("#attachBtn").hidden = !config.features.attachments;
+  $("#qualityBtn").hidden = !config.features.premium;
+  $("#ownKeyCard").hidden = !config.features.ownKey;
+  $("#ownKeyBtn").hidden = !config.features.ownKey;
+
+  renderQualityButton();
+  renderUsageCard();
+  updateQuotaUI();
+  if (config.usageCounted) refreshQuota();
 }
 
-// Free chats left: the server's count when it keeps one, otherwise this browser's.
-const freeLimit = () => serverQuota?.limit ?? FREE_CHAT_LIMIT;
-const freeRemaining = () => serverQuota ? serverQuota.remaining : Math.max(0, FREE_CHAT_LIMIT - freeChatsUsed);
+// This browser's usage as the server counts it. Returns the result so callers can react to it.
+async function refreshQuota() {
+  const result = await fetchQuota({ clientId, licenseKey: settings.licenseKey });
+  quota = result.status === "ok" ? result.quota : null;
+  renderUsageCard();
+  updateQuotaUI();
+  renderQualityButton();
+  return result;
+}
+
+const hasOwnKey = () => Boolean(config.features.ownKey && byok?.key && byok.enabled !== false);
+const hasLicense = () => Boolean(settings.licenseKey);
+// Premium requests (Claude) are on when the user is paid, the server offers them, and the toggle is on.
+const premiumOn = () => hasLicense() && config.features.premium && settings.quality === "premium";
+
+const shortDate = (iso) => { try { return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" }); } catch { return ""; } };
+const meterPercent = (q) => (q.limit > 0 ? Math.min(100, Math.round((q.used / q.limit) * 100)) : 100);
+
+function renderQualityButton() {
+  const on = premiumOn();
+  const left = quota?.premium?.remaining;
+  $("#qualityBtn").classList.toggle("is-on", on);
+  $("#qualityBtn").setAttribute("aria-pressed", String(on));
+  $("#qualityLabel").textContent = on ? (Number.isFinite(left) ? `Premium · ${left} left` : "Premium on") : "Premium";
+  $("#qualityBtn").title = on ? "Premium requests are on. Click to switch back to standard." : "Use a premium request (Claude) for your messages";
+}
+
+async function onQualityClick() {
+  if (!hasLicense()) {
+    showLimitCard({ title: "Premium requests are a Premium feature", body: `Upgrade to ${config.plans.pro.name} to use them.`, ownKey: false, perks: config.plans.pro.perks });
+    return;
+  }
+  settings.quality = premiumOn() ? "standard" : "premium";
+  await persistSettings();
+  renderQualityButton();
+}
+
+// What the quota row and the plan card say, from the server's numbers.
+function updateQuotaUI() {
+  const { free, pro } = config.plans;
+  const q = quota;
+  let pct = 0;
+  if (hasOwnKey()) {
+    $("#quotaLabel").textContent = "Your key";
+    $("#quotaText").textContent = `${BYOK_PROVIDERS[byok.provider].label}, no limit`;
+  } else if (hasLicense()) {
+    $("#quotaLabel").textContent = pro.name;
+    if (q?.plan === "pro") { $("#quotaText").textContent = `${q.remaining} of ${q.limit} left`; pct = meterPercent(q); }
+    else $("#quotaText").textContent = "Active";
+  } else {
+    $("#quotaLabel").textContent = free.name;
+    if (q?.plan === "free") { $("#quotaText").textContent = `${q.remaining} of ${q.limit} left today`; pct = meterPercent(q); }
+    else $("#quotaText").textContent = free.perks[0] || "";
+  }
+  $("#quotaFill").style.width = `${pct}%`;
+  document.body.classList.toggle("quota-empty", !hasOwnKey() && Boolean(q) && q.remaining === 0);
+  $("#planActions").hidden = hasOwnKey() || hasLicense();
+  updateComposer();
+}
+
+function renderUsageCard() {
+  const { free, pro } = config.plans;
+  const q = quota;
+  const paid = hasLicense();
+  $("#usagePlan").textContent = paid ? pro.name : free.name;
+  const lines = [];
+  if (paid && q?.plan === "pro") {
+    lines.push(`${q.used} of ${q.limit} messages used this month${q.premium?.limit ? `, ${q.premium.used} of ${q.premium.limit} premium requests` : ""}. Resets ${shortDate(q.resetsAt)}.`);
+  } else if (paid) {
+    lines.push("Your license is saved. Your usage appears here once the service answers.");
+  } else if (q?.plan === "free") {
+    lines.push(`${q.used} of ${q.limit} messages used today. They come back at midnight UTC.`);
+  } else {
+    lines.push(free.perks[0] || "");
+  }
+  if (hasOwnKey()) lines.push("Chats with your own key are not counted here.");
+  if (!paid && pro.perks.length) lines.push(`${pro.name}${pro.price ? ` (${pro.price})` : ""} includes:`);
+  $("#usageDetail").textContent = lines.filter(Boolean).join(" ");
+  $("#usagePerks").innerHTML = pro.perks.map(perk => `<li>${escapeText(perk)}</li>`).join("");
+}
 
 // ---- attachments (Premium) ----
 
 function renderAttachments() {
   const list = $("#attachList");
   list.hidden = !pendingFiles.length;
-  list.innerHTML = pendingFiles.map((file, i) => `
+  const chips = pendingFiles.map((file, i) => `
     <span class="attach-chip"><span title="${escapeAttr(file.name)}">${escapeText(file.name)}</span><small>${formatSize(file.size)}</small><button type="button" data-remove-attachment="${i}" aria-label="Remove ${escapeAttr(file.name)}">×</button></span>`).join("");
+  // Images and PDFs need a premium model, so they use a premium request.
+  const left = quota?.premium?.remaining;
+  const note = needsVision(pendingFiles) ? `<span class="attach-note">Images and PDFs use 1 premium request${Number.isFinite(left) ? ` (${left} left)` : ""}.</span>` : "";
+  list.innerHTML = chips + note;
   updateComposer();
 }
 
 function onAttachClick() {
   if (!hasLicense()) {
-    showLimitCard({ title: "Attachments are a Premium feature", body: "Upgrade to add images, PDFs and text files to your chat.", ownKey: false });
+    showLimitCard({ title: "Attachments are a Premium feature", body: `Upgrade to ${config.plans.pro.name} to add images, PDFs and text files to your chat.`, ownKey: false, perks: config.plans.pro.perks });
     return;
   }
   $("#fileInput").click();
@@ -316,11 +395,6 @@ async function onFilesPicked(event) {
 }
 
 // ---- your own API key ----
-
-const hasOwnKey = () => Boolean(byok?.key && byok.enabled !== false);
-const hasLicense = () => Boolean(settings.licenseKey);
-// Chats with your own key, or with a Premium license, are not limited by the free allowance.
-const unlimited = () => hasOwnKey() || hasLicense();
 
 function openOwnKeySettings() {
   openSettings();
@@ -402,103 +476,82 @@ async function removeByok() {
 }
 
 // A card in the chat that explains a limit and offers the way past it.
-function showLimitCard({ title, body, ownKey = true } = {}) {
+function showLimitCard({ title, body, upgrade = true, ownKey = true, perks = [] } = {}) {
   $("#limitCard")?.remove();
   const card = document.createElement("div");
   card.id = "limitCard";
   card.className = "limit-card";
-  const upgrade = serverInfo?.upgradeUrl;
+  const url = upgrade ? config.upgradeUrl : null;
+  const actions = [
+    url ? `<a class="plan-btn primary" href="${escapeAttr(url)}" target="_blank" rel="noopener">${escapeText(upgradeLabel(config))}</a>` : "",
+    ownKey && config.features.ownKey ? '<button class="plan-btn" type="button" data-open-own-key>Use your own key</button>' : ""
+  ].filter(Boolean).join("");
   card.innerHTML = `
-    <strong>${escapeText(title || `You have used your ${freeLimit()} free chats`)}</strong>
-    <p>${escapeText(body || "Keep going with Premium Access, or add your own API key for unlimited chats.")}</p>
-    <div class="plan-actions">
-      ${upgrade ? `<a class="plan-btn primary" href="${escapeAttr(upgrade)}" target="_blank" rel="noopener">Upgrade to Premium</a>` : ""}
-      ${ownKey ? '<button class="plan-btn" type="button" data-open-own-key>Use your own key</button>' : ""}
-    </div>`;
+    <strong>${escapeText(title)}</strong>
+    <p>${escapeText(body)}</p>
+    ${perks.length ? `<ul class="perk-list">${perks.map(perk => `<li>${escapeText(perk)}</li>`).join("")}</ul>` : ""}
+    ${actions ? `<div class="plan-actions">${actions}</div>` : ""}`;
   chatBox.append(card);
   scrollToBottom();
 }
+
+// The server refuses a message with a code and its own wording (the numbers are always current).
+// Here is only how each refusal is presented.
+const REFUSALS = {
+  free_limit_reached: { title: "Daily limit reached", upgrade: true, ownKey: true, perks: true },
+  free_limit_ip: { title: "Limit reached on this network", upgrade: true, ownKey: true, perks: true },
+  pro_limit_reached: { title: "Monthly limit reached", upgrade: false, ownKey: true },
+  premium_limit_reached: { title: "Premium requests used", upgrade: false, ownKey: false },
+  premium_required: { title: "Premium feature", upgrade: true, ownKey: false, perks: true },
+  attachments_paid: { title: "Premium feature", upgrade: true, ownKey: false, perks: true },
+  update_required: { title: "Update needed", upgrade: false, ownKey: false }
+};
 
 async function saveLicense() {
   const button = $("#saveLicense");
   settings.licenseKey = $("#licenseInput").value.trim();
   await persistSettings();
-  if (!settings.licenseKey) return setLicenseStatus("License removed.", "");
+  quota = null;
+  if (!settings.licenseKey) {
+    setLicenseStatus("License removed.", "");
+    updateQuotaUI();
+    renderUsageCard();
+    renderQualityButton();
+    refreshQuota();
+    return;
+  }
   button.disabled = true;
   setLicenseStatus("Verifying…", "");
   try {
-    // The unverified health check reports whether this license is accepted.
-    const report = await checkProviders({ verify: false, licenseKey: settings.licenseKey });
-    if (!report.gated) setLicenseStatus("Paid gating is off on this server; every user has access.", "");
-    else if (report.entitled) setLicenseStatus("License verified. Paid access is active.", "success");
-    else setLicenseStatus("That license was not accepted. Check the key, or that the subscription is active.", "error");
-  } catch (error) {
-    setLicenseStatus(error.message, "error");
+    const result = await refreshQuota();
+    if (result.status === "ok") setLicenseStatus(`License verified. ${config.plans.pro.name} is active.`, "success");
+    else if (result.status === "off") setLicenseStatus("Paid plans are not switched on yet, so everyone has access for now.", "");
+    else if (result.status === "denied") setLicenseStatus("That license was not accepted. Check the key, or that the subscription is active.", "error");
+    else setLicenseStatus("Could not check the license right now. Please try again.", "error");
   } finally {
     button.disabled = false;
+    updateQuotaUI();
   }
 }
 
+// Reloads the server's settings and shows a clear message about whether the service answered.
 async function testConnection() {
   const button = $("#testConnection");
-  const list = $("#providerResults");
   button.disabled = true;
   button.textContent = "Checking…";
-  list.innerHTML = "";
-  setSettingsStatus("Checking keys and sending a small test request…", "");
+  setSettingsStatus("", "");
   try {
-    const report = await checkProviders({ provider: settings.provider, verify: true, licenseKey: settings.licenseKey });
-    const results = Object.values(report.providers);
-    list.innerHTML = results.map(renderProviderResult).join("");
-
-    const passed = results.filter(result => result.ok);
-    if (settings.provider !== "auto") {
-      const result = report.providers[settings.provider];
-      if (!result?.ok) throw new Error(`${providerLabel(settings.provider)} is not connected.`);
-      setSettingsStatus(`Connected and verified: ${result.label} · ${result.model}`, "success");
-    } else if (passed.length) {
-      const fallback = report.defaultProvider ? ` Auto uses ${providerLabel(report.defaultProvider)}.` : "";
-      setSettingsStatus(`${passed.length} of ${results.length} providers connected.${fallback}`, "success");
-    } else {
-      throw new Error(report.error || "No provider is connected.");
-    }
+    const ok = await refreshConfig();
+    if (!ok) throw new Error("Could not reach the service. Check your internet connection and try again.");
+    setSettingsStatus(`Connected. Settings loaded for the ${config.plans.free.name} and ${config.plans.pro.name} plans.`, "success");
     connectionLabel.textContent = "Connected";
   } catch (error) {
     console.error("[Smart Chat] Connection test error", error);
-    setSettingsStatus(error.message || "Could not reach the Vercel endpoint.", "error");
+    setSettingsStatus(error.message, "error");
   } finally {
     button.disabled = false;
-    updateConnectionButton();
+    button.textContent = "Check connection";
   }
-}
-
-function renderProviderResult(result) {
-  const state = result.ok ? "ok" : (result.configured ? "fail" : "off");
-  const status = result.ok
-    ? (result.verified ? "Verified" : "Key accepted")
-    : (result.configured ? "Failed" : "Not set");
-  const timing = Number.isFinite(result.latencyMs) ? `${result.latencyMs} ms` : "";
-  const details = [];
-  if (result.ok) {
-    details.push(`<p>Model ${escapeText(result.model)}</p>`);
-  } else if (result.configured) {
-    const where = result.stage ? `${result.stage} step: ` : "";
-    details.push(`<p class="provider-error">${escapeText(where + (result.error || "Unknown error"))}</p>`);
-  } else {
-    details.push(`<p>Add ${escapeText(result.keyEnv)} on Vercel to enable.</p>`);
-  }
-  if (result.hint && result.configured) details.push(`<p>${escapeText(result.hint)}</p>`);
-  (result.warnings || []).forEach(warning => details.push(`<p>${escapeText(warning)}</p>`));
-  return `
-    <li class="provider-result ${state}">
-      <div class="provider-result-head">
-        <span class="provider-dot" aria-hidden="true"></span>
-        <span>${escapeText(result.label)}</span>
-        <span class="provider-tag">${escapeText(status)}</span>
-        <small>${escapeText(timing)}</small>
-      </div>
-      ${details.join("")}
-    </li>`;
 }
 
 function setSettingsStatus(message, type) {
@@ -509,7 +562,6 @@ function setSettingsStatus(message, type) {
 
 async function persistSettings() { await storageSet({ settings }); }
 async function persistHistory() { await storageSet({ chatHistory: history.slice(-50) }); }
-async function persistQuota() { await storageSet({ freeChatsUsed }); }
 
 function renderHistory() {
   chatBox.innerHTML = "";
@@ -563,14 +615,6 @@ async function sendCurrentMessage() {
   const typed = inputText.value.trim();
   const text = typed || (files.length ? "Please look at the attached file(s)." : "");
   if (!text || isLoading) return;
-  if (!unlimited() && freeRemaining() <= 0) {
-    showLimitCard();
-    updateQuotaUI();
-    return;
-  }
-  if (needsVision(files) && ["deepseek", "v0"].includes(settings.provider)) {
-    return toast(`${providerLabel(settings.provider)} cannot read images or PDFs. Choose Auto, OpenAI or Anthropic.`);
-  }
   $("#limitCard")?.remove();
 
   isLoading = true;
@@ -588,21 +632,21 @@ async function sendCurrentMessage() {
   connectionLabel.textContent = "Working…";
 
   try {
-    const mode = MODES[settings.mode] || MODES.chat;
-    // Attachments are a hosted, Premium feature, so they always go through our server.
-    const useOwnKey = hasOwnKey() && !files.length;
+    const system = systemPromptFor(config, settings.mode);
+    // Premium requests and attachments are hosted features, so they always go through our server.
+    const useOwnKey = hasOwnKey() && !files.length && !premiumOn();
     const result = useOwnKey
-      ? await sendOwnKeyRequest({ provider: byok.provider, key: byok.key, model: byok.model, prompt: text, system: mode.system })
-      : await sendAssistantRequest({ prompt: text, system: mode.system, provider: settings.provider, licenseKey: settings.licenseKey, clientId, attachments: files });
+      ? await sendOwnKeyRequest({ provider: byok.provider, key: byok.key, model: byok.model, prompt: text, system })
+      : await sendAssistantRequest({ prompt: text, system, mode: settings.mode, quality: premiumOn() ? "premium" : "standard", licenseKey: settings.licenseKey, clientId, attachments: files });
     removeTyping();
     lastAssistantText = result.text;
     history.push({ role: "assistant", text: result.text, at: Date.now() });
-    // The server counts free chats when it can; otherwise this browser does.
-    if (result.quota) serverQuota = result.quota;
-    else if (!useOwnKey && !hasLicense()) freeChatsUsed += 1;
+    if (result.quota) quota = result.quota; // the server's count, after this message
     addMessageToDOM("assistant", result.text);
-    await Promise.all([persistHistory(), persistQuota()]);
+    await persistHistory();
     updateQuotaUI();
+    renderUsageCard();
+    renderQualityButton();
     connectionLabel.textContent = "Connected";
   } catch (error) {
     console.error("[Smart Chat] Chat request error", {
@@ -615,9 +659,13 @@ async function sendCurrentMessage() {
       retryAfter: error?.retryAfter
     });
     removeTyping();
-    if (error.code === "free_limit_reached" || error.code === "free_limit_ip") {
-      // Not an error to keep in the chat: take the message back and offer the way forward.
-      if (error.quota) serverQuota = error.quota;
+    const refusal = REFUSALS[error.code];
+    if (refusal) {
+      // Not an error to keep in the chat: take the message back and show the way forward.
+      if (error.quota) quota = error.quota;
+      if (error.upgradeUrl && /^https:\/\//.test(error.upgradeUrl)) config = { ...config, upgradeUrl: error.upgradeUrl };
+      if (error.code === "premium_limit_reached") { settings.quality = "standard"; await persistSettings(); }
+      if (error.code === "update_required") { $("#updateBanner").textContent = error.message; $("#updateBanner").hidden = false; }
       history.pop();
       userMessage.remove();
       await persistHistory();
@@ -626,8 +674,11 @@ async function sendCurrentMessage() {
       pendingFiles = files;
       renderAttachments();
       autoSizeInput();
-      showLimitCard(error.code === "free_limit_ip" ? { body: error.message } : {});
+      showLimitCard({ title: refusal.title, body: error.message, upgrade: refusal.upgrade, ownKey: refusal.ownKey, perks: refusal.perks ? config.plans.pro.perks : [] });
+      applyUpgradeLinks();
       updateQuotaUI();
+      renderUsageCard();
+      renderQualityButton();
       connectionLabel.textContent = "Limit reached";
       return;
     }
@@ -643,46 +694,19 @@ async function sendCurrentMessage() {
 }
 
 function friendlyError(error) {
-  if (error.code === "paid_required" || error.code === "attachments_paid" || String(error.code || "").startsWith("license_")) {
-    showUpgrade(error.upgradeUrl);
-    return error.message;
-  }
-  if (error.status === 413 && !error.code) return "The files are too large to send. Keep them under 3 MB in total.";
-  const name = error.provider ? providerLabel(error.provider) : "The AI service";
   if (error.status === 0) return error.message;
+  if (error.status === 413 && !error.code) return "The files are too large to send. Keep them under 3 MB in total.";
   if (error.status === 429 && !error.hint) {
-    return `${name} is rate limited right now.${error.retryAfter ? ` Try again in about ${error.retryAfter} seconds.` : " Please try again shortly."}`;
+    return `The AI service is rate limited right now.${error.retryAfter ? ` Try again in about ${error.retryAfter} seconds.` : " Please try again shortly."}`;
   }
-  const message = error.message || `Something went wrong while contacting ${name}.`;
-  const prefix = error.provider && !message.includes(name) ? `${name}: ` : "";
-  return error.hint ? `${prefix}${message}\n\n${error.hint}` : `${prefix}${message}`;
-}
-
-function updateQuotaUI() {
-  const remaining = freeRemaining();
-  const usedPercent = Math.min(100, Math.round(((freeLimit() - remaining) / freeLimit()) * 100));
-  if (hasOwnKey()) {
-    $("#quotaLabel").textContent = "Your key";
-    $("#quotaText").textContent = `${BYOK_PROVIDERS[byok.provider].label}, unlimited`;
-    $("#quotaFill").style.width = "0%";
-  } else if (hasLicense()) {
-    $("#quotaLabel").textContent = "Premium";
-    $("#quotaText").textContent = "Unlimited chats";
-    $("#quotaFill").style.width = "0%";
-  } else {
-    $("#quotaLabel").textContent = "Free plan";
-    $("#quotaText").textContent = remaining === 1 ? "1 chat left" : `${remaining} chats left`;
-    $("#quotaFill").style.width = `${usedPercent}%`;
-  }
-  document.body.classList.toggle("quota-empty", !unlimited() && remaining === 0);
-  $("#planActions").hidden = unlimited();
-  updateComposer();
+  const message = error.message || "Something went wrong while contacting the AI service.";
+  return error.hint ? `${message}\n\n${error.hint}` : message;
 }
 
 function updateComposer() {
   charCounter.textContent = `${inputText.value.length} / 6000`;
-  const hasInput = Boolean(inputText.value.trim()) || pendingFiles.length > 0;
-  sendBtn.disabled = isLoading || !hasInput || (!unlimited() && freeRemaining() <= 0);
+  // The server decides what is allowed and says why, so the button is only off while there is nothing to send.
+  sendBtn.disabled = isLoading || !(inputText.value.trim() || pendingFiles.length);
 }
 
 function autoSizeInput() {
