@@ -5,9 +5,10 @@ import { clearLicenseCache } from "../server/entitlement.js";
 import { validateAttachments, promptWithTextFiles } from "../server/attachments.js";
 import { resolveProvider } from "../server/providers.js";
 
+const PREFIXED = ["chat_assistant_db_KV_REST_API_URL", "chat_assistant_db_KV_REST_API_TOKEN", "chat_assistant_db_KV_REST_API_READ_ONLY_TOKEN", "chat_assistant_db_KV_URL", "chat_assistant_db_REDIS_URL"];
 const VARS = ["OPENAI_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY", "V0_API_KEY", "AI_PROVIDER", "POLAR_ORGANIZATION_ID", "POLAR_CHECKOUT_URL",
   "POLAR_ENV", "POLAR_SERVER", "POLAR_SANDBOX_ORGANIZATION_ID", "POLAR_SANDBOX_CHECKOUT_URL", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN",
-  "KV_REST_API_URL", "KV_REST_API_TOKEN", "FREE_CHAT_LIMIT", "FREE_IP_DAILY_LIMIT", "FREE_PROVIDER", "QUOTA_SALT", "OPENAI_MODEL", "ANTHROPIC_MODEL"];
+  "KV_REST_API_URL", "KV_REST_API_TOKEN", ...PREFIXED, "FREE_CHAT_LIMIT", "FREE_IP_DAILY_LIMIT", "FREE_PROVIDER", "QUOTA_SALT", "OPENAI_MODEL", "ANTHROPIC_MODEL"];
 const ORG = "11111111-2222-3333-4444-555555555555";
 const DEVICE = "3f0c9a52-6b1d-4e1a-9a55-0d6f5b1c2e77";
 const OTHER_DEVICE = "9a7e3c10-2d4b-4f6e-8c11-5a2b7d9e0f34";
@@ -310,4 +311,36 @@ test("the connection report shows whether the free allowance's store is connecte
   res = await call({ method: "GET", query: { provider: "openai" } });
   assert.deepEqual([res.body.freeAllowance.configured, res.body.freeAllowance.reachable, res.body.freeAllowance.activeNow], [false, null, false]);
   assert.equal(JSON.stringify(res.body).includes("tok"), false, "the store token is never in the report");
+});
+
+test("Vercel's prefixed Redis variables are found, and the read-only token is never used", async () => {
+  delete process.env.UPSTASH_REDIS_REST_URL; delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  Object.assign(process.env, {
+    chat_assistant_db_KV_REST_API_URL: "https://redis.example.com",
+    chat_assistant_db_KV_REST_API_TOKEN: "write-token",
+    chat_assistant_db_KV_REST_API_READ_ONLY_TOKEN: "read-only-token",
+    chat_assistant_db_KV_URL: "rediss://default:secret@redis.example.com:6379",
+    chat_assistant_db_REDIS_URL: "rediss://default:secret@redis.example.com:6379"
+  });
+  const res = await freeChat();
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  const redisCalls = calls.filter(c => c.url.includes("redis.example.com"));
+  assert.ok(redisCalls.length > 0);
+  assert.ok(redisCalls.every(c => c.init.headers.Authorization === "Bearer write-token"), "must use the read-write token");
+  const report = await call({ method: "GET", query: { provider: "openai" } });
+  assert.deepEqual([report.body.freeAllowance.configured, report.body.freeAllowance.reachable], [true, true]);
+  assert.ok(!JSON.stringify(report.body).includes("write-token") && !JSON.stringify(report.body).includes("secret@"), "no store credentials in the report");
+});
+
+test("plain names take priority over a prefixed pair, and a prefixed URL without its token is not enough", async () => {
+  process.env.chat_assistant_db_KV_REST_API_URL = "https://other.example.com";
+  process.env.chat_assistant_db_KV_REST_API_TOKEN = "other-token";
+  await freeChat();
+  assert.ok(calls.filter(c => c.url.includes("/pipeline")).every(c => c.url.startsWith("https://redis.example.com")), "the plain pair wins");
+
+  delete process.env.UPSTASH_REDIS_REST_URL; delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  delete process.env.chat_assistant_db_KV_REST_API_TOKEN;
+  process.env.chat_assistant_db_KV_REST_API_READ_ONLY_TOKEN = "read-only-token";
+  const res = await call({ method: "GET", query: { info: "1" } });
+  assert.equal(res.body.freeQuota, false, "a URL with only a read-only token must not count as configured");
 });
