@@ -23,7 +23,7 @@ import { PROVIDERS, PROVIDER_IDS, ProviderError, canReadFiles, checkProvider, ge
 import { denial, entitlementFor, gatingEnabled, polarEnvironment, upgradeUrl } from "../server/entitlement.js";
 import { AttachmentError, validateAttachments } from "../server/attachments.js";
 import { needsVision } from "../src/lib/attachments.js";
-import { QuotaError, freeLimit, pickFreeProvider, readClientId, readIp, refund, reserve, storeConfigured, usage } from "../server/quota.js";
+import { QuotaError, freeLimit, pickFreeProvider, ping, readClientId, readIp, refund, reserve, storeConfigured, usage } from "../server/quota.js";
 
 const MAX_PROMPT = 6000;
 const MAX_SYSTEM = 4000;
@@ -90,6 +90,16 @@ async function handleHealth(req, res) {
   const defaultProvider = resolveProvider("auto");
   const ok = requested ? results[0].ok : results.some(result => result.ok);
 
+  // The free allowance's counter store, so it can be checked before paid-only access is switched on.
+  const configured = storeConfigured();
+  const freeAllowance = {
+    configured,
+    reachable: configured ? await ping() : null,
+    limit: freeLimit(),
+    provider: pickFreeProvider(id => isConfigured(id)),
+    activeNow: gatingEnabled() && configured
+  };
+
   return send(res, ok ? 200 : 503, {
     ok,
     vercel: true,
@@ -99,6 +109,7 @@ async function handleHealth(req, res) {
     environment: polarEnvironment(),
     upgradeUrl: upgradeUrl(),
     defaultProvider,
+    freeAllowance,
     providers,
     error: ok ? null : (requested ? results[0].error : "No AI provider is connected. Add at least one API key on Vercel and redeploy.")
   });

@@ -117,6 +117,16 @@ export async function refund(clientId, ip, { env = process.env } = {}) {
   await pipeline(env, [["DECR", deviceKey(env, clientId)], ["DECR", ipKey(env, ip)]]).catch(() => {});
 }
 
+// Is the store reachable and answering? Used by the connection report.
+export async function ping({ env = process.env } = {}) {
+  try {
+    const [reply] = await pipeline(env, [["PING"]]);
+    return reply === "PONG";
+  } catch {
+    return false;
+  }
+}
+
 // Which provider serves free chats: FREE_PROVIDER if configured, else the cheapest one with a key.
 export function pickFreeProvider(isConfigured, env = process.env) {
   const named = (env.FREE_PROVIDER || "").trim().toLowerCase();

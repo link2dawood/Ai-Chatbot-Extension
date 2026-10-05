@@ -23,6 +23,7 @@ function runPipeline(commands) {
     if (cmd === "INCR") { redis.set(key, (redis.get(key) || 0) + 1); return { result: redis.get(key) }; }
     if (cmd === "DECR") { redis.set(key, (redis.get(key) || 0) - 1); return { result: redis.get(key) }; }
     if (cmd === "EXPIRE") return { result: 1 };
+    if (cmd === "PING") return { result: "PONG" };
     return { error: `unknown command ${cmd}` };
   });
 }
@@ -290,4 +291,23 @@ test("neither device ids nor IP addresses are ever written to the store in the c
   assert.equal([...redis.keys()].sort().join(), before);
   redis = new Map(); process.env.QUOTA_SALT = "another-secret"; await freeChat();
   assert.notEqual([...redis.keys()].sort().join(), before);
+});
+
+test("the connection report shows whether the free allowance's store is connected, before paid-only access is on", async () => {
+  delete process.env.POLAR_ORGANIZATION_ID; // paid-only access still off
+  let res = await call({ method: "GET", query: { provider: "openai" } });
+  assert.deepEqual(res.body.freeAllowance, { configured: true, reachable: true, limit: 10, provider: "deepseek", activeNow: false });
+
+  process.env.POLAR_ORGANIZATION_ID = ORG;
+  res = await call({ method: "GET", query: { provider: "openai" } });
+  assert.equal(res.body.freeAllowance.activeNow, true);
+
+  redisDown = true;
+  res = await call({ method: "GET", query: { provider: "openai" } });
+  assert.deepEqual([res.body.freeAllowance.configured, res.body.freeAllowance.reachable], [true, false]);
+
+  delete process.env.UPSTASH_REDIS_REST_URL; delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  res = await call({ method: "GET", query: { provider: "openai" } });
+  assert.deepEqual([res.body.freeAllowance.configured, res.body.freeAllowance.reachable, res.body.freeAllowance.activeNow], [false, null, false]);
+  assert.equal(JSON.stringify(res.body).includes("tok"), false, "the store token is never in the report");
 });

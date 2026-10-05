@@ -61,7 +61,7 @@ With paid-only access on, visitors without a license get a few chats on one chea
 
 1. In Vercel open your project → **Storage** → **Create** → **Upstash Redis** (the free plan is enough), and connect it to the project. Vercel adds `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` (or the older `KV_REST_API_URL` / `KV_REST_API_TOKEN`) for you.
 2. Optionally set `FREE_CHAT_LIMIT` (default 10), `FREE_IP_DAILY_LIMIT` (default 40) and `FREE_PROVIDER` (default: the first of DeepSeek, OpenAI, Anthropic with a key).
-3. Redeploy. `GET /api/chat?info=1` should now show `"freeQuota": true`.
+3. Redeploy, then open `/api/chat?provider=deepseek` (any provider works). The `freeAllowance` block should show `"configured": true, "reachable": true`. That works even before paid-only access is on; `"activeNow"` turns true once it is, and `?info=1` then shows `"freeQuota": true`.
 
 Without the store there is no free tier: visitors get the paid-only message. Free chats are never counted in the extension when the server counts them.
 

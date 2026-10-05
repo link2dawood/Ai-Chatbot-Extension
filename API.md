@@ -118,6 +118,8 @@ GET /api/chat?provider=deepseek&verify=1   one provider
 
 When paid gating is on, `verify=1` only runs for requests that carry a valid `X-License-Key`, because it spends tokens on your keys. Without one the report is still returned, with `verified: false`.
 
+The report also has a `freeAllowance` block that shows whether the free allowance's counter store is connected, even while paid-only access is still off: `{ "configured": true, "reachable": true, "limit": 10, "provider": "deepseek", "activeNow": false }`. `reachable: true` means the store answered a ping; `activeNow` becomes true once paid-only access is on.
+
 Sample response:
 
 ```json
