@@ -12,7 +12,8 @@
 //
 // Storage: Upstash Redis over its REST API (no dependency). In Vercel add
 // Storage → Upstash Redis; it sets these variables:
-//   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN   (or the KV_REST_API_URL / KV_REST_API_TOKEN names)
+//   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN   (or the KV_REST_API_URL / KV_REST_API_TOKEN names,
+//   with or without a prefix such as chat_assistant_db_)
 //
 // Settings:
 //   FREE_CHAT_LIMIT       free chats per device, for life (default 10)
@@ -32,10 +33,21 @@ export class QuotaError extends Error {
   constructor(message) { super(message); this.code = "quota_unavailable"; }
 }
 
+// Finds the Redis REST URL and token. Plain names win; otherwise a prefixed pair is used,
+// because Vercel's Upstash integration can add a prefix (for example a database called
+// chat-assistant-db gives chat_assistant_db_KV_REST_API_URL). The read-only token is never used.
 function store(env) {
-  const url = (env.UPSTASH_REDIS_REST_URL || env.KV_REST_API_URL || "").trim().replace(/\/$/, "");
-  const token = (env.UPSTASH_REDIS_REST_TOKEN || env.KV_REST_API_TOKEN || "").trim();
-  return url && token ? { url, token } : null;
+  const clean = (value) => (typeof value === "string" ? value.trim() : "");
+  for (const [urlName, tokenName] of [["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"], ["KV_REST_API_URL", "KV_REST_API_TOKEN"]]) {
+    if (clean(env[urlName]) && clean(env[tokenName])) return { url: clean(env[urlName]).replace(/\/$/, ""), token: clean(env[tokenName]) };
+  }
+  for (const key of Object.keys(env).sort()) {
+    const match = key.match(/^(.+_)(KV_REST_API_URL|UPSTASH_REDIS_REST_URL)$/);
+    if (!match) continue;
+    const tokenName = match[1] + (match[2] === "KV_REST_API_URL" ? "KV_REST_API_TOKEN" : "UPSTASH_REDIS_REST_TOKEN");
+    if (clean(env[key]) && clean(env[tokenName])) return { url: clean(env[key]).replace(/\/$/, ""), token: clean(env[tokenName]) };
+  }
+  return null;
 }
 
 export const storeConfigured = (env = process.env) => Boolean(store(env));
@@ -115,6 +127,16 @@ export async function reserve(clientId, ip, { env = process.env } = {}) {
 // Gives the chat back when the model call failed, so a failure costs nothing.
 export async function refund(clientId, ip, { env = process.env } = {}) {
   await pipeline(env, [["DECR", deviceKey(env, clientId)], ["DECR", ipKey(env, ip)]]).catch(() => {});
+}
+
+// Is the store reachable and answering? Used by the connection report.
+export async function ping({ env = process.env } = {}) {
+  try {
+    const [reply] = await pipeline(env, [["PING"]]);
+    return reply === "PONG";
+  } catch {
+    return false;
+  }
 }
 
 // Which provider serves free chats: FREE_PROVIDER if configured, else the cheapest one with a key.
