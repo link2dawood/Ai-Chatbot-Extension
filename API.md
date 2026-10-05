@@ -95,18 +95,18 @@ Sample payload:
 }
 ```
 
-## Free allowance
+## Plans, usage and the thin client
 
-When paid-only access is on, a visitor with no license gets a few chats on one cheap model, counted **on the server**:
+The extension is a thin client. The server decides plans, limits, prices, prompts and which model answers; the extension only reads them, so changing any of it needs a Vercel redeploy and **no extension update**.
 
-- The extension makes a random id on first run and sends it as `X-Client-Id`. The count is kept against a keyed hash of it (never the raw id) in a Redis store (Upstash), so clearing the extension's data does not reset it.
-- A second counter limits each IP address per day (stored only as a keyed hash, and deleted after about two days) (`FREE_IP_DAILY_LIMIT`), so making new ids by reinstalling gets a script only so far. This is a speed bump, not an identity check; hard limits need accounts.
-- The chat is reserved before the model is called and given back if the call fails, so failures cost nothing.
-- Free chats always use `FREE_PROVIDER` (default: the first of DeepSeek, OpenAI, Anthropic that has a key), and cannot attach files.
-- If the store is not configured, there is no free tier and visitors get the paid-only message. If the store is down, free chats fail closed with `quota_unavailable` rather than going uncounted.
-- With paid-only access off, nothing is counted and nothing is restricted.
-
-`GET /api/chat?quota=1` with an `X-Client-Id` header returns `{ "ok": true, "enabled": true, "used": 3, "limit": 10, "remaining": 7 }`. `GET /api/chat?info=1` includes `freeQuota` (true when the server keeps a count) and `freeLimit`.
+- `GET /api/chat?config=1` returns public data: `apiVersion`, `gated`, `environment`, `upgradeUrl`, `plans` (name, price, period, limit, premiumLimit, perks), `features`, `intents` (id and label for Rewrite), `modes` (system prompts), `minExtensionVersion`, `updateMessage`. The extension checks every field, accepts only https links, and never runs anything it receives.
+- **Free**: `FREE_DAILY_LIMIT` messages per day (default 10) on `STANDARD_PROVIDER` (default DeepSeek), counted per device (`X-Client-Id`) and per IP (`FREE_IP_DAILY_LIMIT`, default 40) in UTC days.
+- **Pro**: `PRO_MONTHLY_LIMIT` messages per month (default 500) on the standard provider, plus `PRO_PREMIUM_MONTHLY_LIMIT` (default 30) premium requests on `PREMIUM_PROVIDER` (default Anthropic Claude Haiku). A request is premium when the Premium toggle is on (`quality: "premium"`) or it carries an image or PDF. Files are Pro only.
+- Counts live in Redis (Upstash) against keyed hashes of the device id, IP and license key. A message is reserved before the model is called and given back if the call fails. If the store is missing or down while paid-only access is on, requests fail closed.
+- Refusals carry a `code` and server-worded `error`: `free_limit_reached`, `free_limit_ip`, `pro_limit_reached`, `premium_limit_reached`, `premium_required`, `attachments_paid`, `update_required` (HTTP 426, only when `MIN_EXTENSION_VERSION` is set and the `X-Extension-Version` header is older).
+- Rewrite accepts `intent`: an id from `intents` (Agree, Disagree, Decline, …) or free text such as "firm but respectful". The instructions behind the ids stay on the server.
+- `GET /api/chat?quota=1` (with `X-Client-Id`, and `X-License-Key` for Pro) returns `{ plan, period, resetsAt, used, limit, remaining, premium? }`.
+- OpenAI (gpt-5-nano) is kept for internal utility jobs and only serves chats if it is the only provider. v0 is disabled unless `DISABLED_PROVIDERS` is set without it.
 
 ## `GET /api/chat`: connection report
 
@@ -118,7 +118,7 @@ GET /api/chat?provider=deepseek&verify=1   one provider
 
 When paid gating is on, `verify=1` only runs for requests that carry a valid `X-License-Key`, because it spends tokens on your keys. Without one the report is still returned, with `verified: false`.
 
-The report also has a `freeAllowance` block that shows whether the free allowance's counter store is connected, even while paid-only access is still off: `{ "configured": true, "reachable": true, "limit": 10, "provider": "deepseek", "activeNow": false }`. `reachable: true` means the store answered a ping; `activeNow` becomes true once paid-only access is on.
+The report also has a `usageCounting` block with the counter store status, the limits and the routing, even while paid-only access is still off: `{ "configured": true, "reachable": true, "activeNow": false, "limits": {...}, "standardProvider": "deepseek", "premiumProvider": "anthropic" }`. `reachable: true` means the store answered a ping; `activeNow` becomes true once paid-only access is on.
 
 Sample response:
 

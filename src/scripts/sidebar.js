@@ -162,6 +162,9 @@ function bindEvents() {
   $("#qualityBtn").addEventListener("click", onQualityClick);
   $("#copyBtn").addEventListener("click", copyLastReply);
   $("#insertBtn").addEventListener("click", insertLastReply);
+  $("#intentCustom").addEventListener("input", () => {
+    if ($("#intentCustom").value && intentId) { intentId = ""; renderIntents(); }
+  });
   $("#clearBtn").addEventListener("click", clearChat);
   $("#exportBtn").addEventListener("click", exportChat);
 }
@@ -183,6 +186,37 @@ function applySettingsToUI() {
   connectionLabel.textContent = "Ready";
 }
 
+let intentId = ""; // the chosen intent chip, or "" for none (the custom field is separate)
+
+function renderIntents() {
+  const row = $("#intentRow");
+  row.hidden = settings.mode !== "rewrite";
+  const chips = $("#intentChips");
+  chips.innerHTML = "";
+  for (const { id, label } of config.intents || []) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = `intent-chip${id === intentId ? " is-on" : ""}`;
+    chip.textContent = label;
+    chip.setAttribute("aria-pressed", String(id === intentId));
+    chip.addEventListener("click", () => {
+      intentId = intentId === id ? "" : id;
+      if (intentId) $("#intentCustom").value = "";
+      renderIntents();
+    });
+    chips.append(chip);
+  }
+}
+
+// What the server (or the own-key prompt) is told the rewrite should do.
+function currentIntent() {
+  if (settings.mode !== "rewrite") return { value: "", label: "" };
+  const custom = $("#intentCustom").value.trim();
+  if (custom) return { value: custom, label: custom };
+  const chosen = (config.intents || []).find(item => item.id === intentId);
+  return chosen ? { value: chosen.id, label: chosen.label } : { value: "", label: "" };
+}
+
 function updateModeUI() {
   const mode = MODES[settings.mode] || MODES.chat;
   $$(".mode-pill").forEach(item => item.classList.toggle("is-active", item.dataset.mode === settings.mode));
@@ -190,6 +224,7 @@ function updateModeUI() {
   $("#modeTitle").textContent = mode.title;
   $("#modeDescription").textContent = mode.description;
   inputText.placeholder = mode.placeholder;
+  renderIntents();
   if (!history.length) renderEmptyState();
 }
 
@@ -259,6 +294,7 @@ function applyUpgradeLinks() {
 
 function applyConfig() {
   applyUpgradeLinks();
+  renderIntents();
   $("#envNote").hidden = config.environment !== "sandbox";
 
   const outdated = needsUpdate(config, extensionVersion());
@@ -632,12 +668,13 @@ async function sendCurrentMessage() {
   connectionLabel.textContent = "Working…";
 
   try {
-    const system = systemPromptFor(config, settings.mode);
+    const intent = currentIntent();
+    const system = systemPromptFor(config, settings.mode) + (intent.label ? `\n\nIntent for this rewrite: ${intent.label.slice(0, 200)}` : "");
     // Premium requests and attachments are hosted features, so they always go through our server.
     const useOwnKey = hasOwnKey() && !files.length && !premiumOn();
     const result = useOwnKey
       ? await sendOwnKeyRequest({ provider: byok.provider, key: byok.key, model: byok.model, prompt: text, system })
-      : await sendAssistantRequest({ prompt: text, system, mode: settings.mode, quality: premiumOn() ? "premium" : "standard", licenseKey: settings.licenseKey, clientId, attachments: files });
+      : await sendAssistantRequest({ prompt: text, system, mode: settings.mode, intent: intent.value, quality: premiumOn() ? "premium" : "standard", licenseKey: settings.licenseKey, clientId, attachments: files });
     removeTyping();
     lastAssistantText = result.text;
     history.push({ role: "assistant", text: result.text, at: Date.now() });

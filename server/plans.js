@@ -11,6 +11,7 @@
 // FREE_PROVIDER is the old name for STANDARD_PROVIDER and still works.
 
 import { MODE_IDS, MODE_PROMPTS } from "../src/lib/prompts.js";
+import { INTENTS } from "./intents.js";
 import { featureOn, limits, planNames, updatePolicy } from "./settings.js";
 import { isConfigured } from "./providers.js";
 import { gatingEnabled, polarEnvironment, upgradeUrl } from "./entitlement.js";
@@ -68,6 +69,7 @@ export function publicConfig(env = process.env) {
       }
     },
     features: { attachments, ownKey: featureOn("OWN_KEY", env), premium },
+    intents: INTENTS.map(({ id, label }) => ({ id, label })),
     modes: Object.fromEntries(MODE_IDS.map(id => [id, { system: MODE_PROMPTS[id] }])),
     minExtensionVersion: update.minVersion,
     updateMessage: update.message

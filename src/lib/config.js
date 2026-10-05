@@ -23,6 +23,11 @@ export const DEFAULT_CONFIG = Object.freeze({
     pro: { name: "Premium Access", price: "", period: "month", limit: 500, premiumLimit: 0, perks: [] }
   },
   features: { attachments: true, ownKey: true, premium: false },
+  intents: [
+    ["agree", "Agree"], ["disagree", "Disagree"], ["clarify", "Ask for clarification"], ["negotiate", "Negotiate"],
+    ["follow_up", "Follow up"], ["decline", "Decline"], ["apologize", "Apologize"], ["persuade", "Persuade"],
+    ["escalate", "Escalate"], ["thank", "Thank"], ["request", "Request"], ["remind", "Remind"]
+  ].map(([id, label]) => ({ id, label })),
   modes: {},
   minExtensionVersion: null,
   updateMessage: "Please update Smart Chat Assistant to keep using it.",
@@ -76,6 +81,17 @@ export function normalizeConfig(raw) {
     if (typeof system === "string" && system.trim()) modes[id] = { system: system.trim().slice(0, 4000) };
   }
 
+  const seen = new Set();
+  const intents = Array.isArray(raw.intents)
+    ? raw.intents.flatMap(item => {
+        const id = typeof item?.id === "string" && /^[a-z_]{1,30}$/.test(item.id) ? item.id : "";
+        const label = str(item?.label, "", 30);
+        if (!id || !label || seen.has(id)) return [];
+        seen.add(id);
+        return [{ id, label }];
+      }).slice(0, 16)
+    : structuredClone(base.intents);
+
   const features = raw.features && typeof raw.features === "object" ? raw.features : {};
   const min = typeof raw.minExtensionVersion === "string" && /^\d+(\.\d+){0,2}$/.test(raw.minExtensionVersion.trim()) ? raw.minExtensionVersion.trim() : null;
   return {
@@ -90,6 +106,7 @@ export function normalizeConfig(raw) {
       ownKey: flag(features.ownKey, base.features.ownKey),
       premium: flag(features.premium, base.features.premium)
     },
+    intents,
     modes,
     minExtensionVersion: min,
     updateMessage: str(raw.updateMessage, base.updateMessage, 200),

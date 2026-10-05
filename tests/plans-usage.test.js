@@ -388,6 +388,16 @@ test("prompts: the server's prompt for the mode wins over what the client sends,
   assert.equal(sent.deepseek.messages[0].content, "Be concise, practical, and natural.");
 });
 
+test("intents: added to the rewrite prompt on the server, ignored in other modes", async () => {
+  await pro({ mode: "rewrite", intent: "disagree" });
+  assert.ok(sent.deepseek.messages[0].content.startsWith(MODE_PROMPTS.rewrite));
+  assert.match(sent.deepseek.messages[0].content, /Disagree politely/);
+  await pro({ mode: "rewrite", intent: "firm but respectful" });
+  assert.match(sent.deepseek.messages[0].content, /firm but respectful/);
+  await pro({ mode: "chat", intent: "disagree" });
+  assert.equal(sent.deepseek.messages[0].content, MODE_PROMPTS.chat);
+});
+
 test("versions: MIN_EXTENSION_VERSION asks older (or unlabelled) extensions to update, and only then", async () => {
   assert.equal((await free()).statusCode, 200, "nothing is enforced by default");
   calls = [];

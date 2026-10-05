@@ -18,7 +18,7 @@ function requestHeaders({ licenseKey, clientId } = {}, headers = {}) {
   };
 }
 
-export async function sendAssistantRequest({ prompt, system, mode, quality, licenseKey, clientId, attachments, signal }) {
+export async function sendAssistantRequest({ prompt, system, mode, intent, quality, licenseKey, clientId, attachments, signal }) {
   let response;
   try {
     response = await fetch(API_ENDPOINT, {
@@ -29,6 +29,7 @@ export async function sendAssistantRequest({ prompt, system, mode, quality, lice
         // The server uses its own prompt for a known mode; `system` is only a fallback for servers that don't.
         system,
         mode,
+        ...(mode === "rewrite" && intent ? { intent: String(intent).slice(0, 200) } : {}),
         quality: quality === "premium" ? "premium" : "standard",
         // Only what the server needs, never the file sizes or anything local.
         ...(attachments?.length ? { attachments: attachments.map(({ name, mime, data }) => ({ name, mime, data })) } : {})

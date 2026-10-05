@@ -78,3 +78,18 @@ test("the upgrade button text follows the plan's price", () => {
   assert.equal(upgradeLabel(normalizeConfig({ plans: { pro: { price: "$2/month" } } })), "Upgrade · $2/month");
   assert.equal(upgradeLabel(normalizeConfig({})), "Upgrade to Premium");
 });
+
+test("intents: the server's list is kept, junk is dropped, instructions never leave the server", async () => {
+  const { INTENTS, intentInstruction } = await import("../server/intents.js");
+  const sent = JSON.parse(JSON.stringify(publicConfig(ENV)));
+  assert.equal(sent.intents.length, INTENTS.length);
+  assert.ok(sent.intents.every(item => Object.keys(item).sort().join() === "id,label"));
+  assert.deepEqual(normalizeConfig(sent).intents, sent.intents);
+  const c = normalizeConfig({ intents: [{ id: "ok", label: "Ok" }, { id: "BAD ID", label: "x" }, { id: "ok", label: "dup" }, { id: "x", label: "" }, 5] });
+  assert.deepEqual(c.intents, [{ id: "ok", label: "Ok" }]);
+  assert.equal(normalizeConfig({}).intents.length, 12);
+  assert.match(intentInstruction("decline"), /Decline kindly/);
+  assert.match(intentInstruction("firm but respectful"), /firm but respectful/);
+  assert.equal(intentInstruction(""), "");
+  assert.ok(intentInstruction("x".repeat(500)).length < 400);
+});

@@ -55,15 +55,15 @@ Set `POLAR_CHECKOUT_URL` and the extension shows an "Upgrade to Premium" button.
 
 Anyone can add their own OpenAI, DeepSeek or Anthropic key in the extension's Settings. Those chats go straight from the browser to the provider and never touch this server, so there is nothing to configure here.
 
-## Free allowance on the server
+## Usage counting and plans on the server
 
-With paid-only access on, visitors without a license get a few chats on one cheap model, counted on the server (details in [API.md](API.md#free-allowance)). It needs a small Redis store, because Vercel functions forget everything between requests:
+With paid-only access on, free and Pro usage are counted on the server (details in [API.md](API.md#plans-usage-and-the-thin-client)). It needs a small Redis store, because Vercel functions forget everything between requests:
 
-1. In Vercel open your project → **Storage** → **Create** → **Upstash Redis** (the free plan is enough), and connect it to the project. Vercel adds the variables for you: `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or `KV_REST_API_URL` and `KV_REST_API_TOKEN`. If you gave the connection a prefix, the names carry it (for example `chat_assistant_db_KV_REST_API_URL`), and the server finds those too. It never uses the read-only token.
-2. Optionally set `FREE_CHAT_LIMIT` (default 10), `FREE_IP_DAILY_LIMIT` (default 40) and `FREE_PROVIDER` (default: the first of DeepSeek, OpenAI, Anthropic with a key).
-3. Redeploy, then open `/api/chat?provider=deepseek` (any provider works). The `freeAllowance` block should show `"configured": true, "reachable": true`. That works even before paid-only access is on; `"activeNow"` turns true once it is, and `?info=1` then shows `"freeQuota": true`.
+1. In Vercel open your project → **Storage** → **Create** → **Upstash Redis** (the free plan is enough), and connect it to the project. Vercel adds the variables for you (`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or `KV_REST_API_URL` and `KV_REST_API_TOKEN`, with your prefix if you set one). The server never uses the read-only token.
+2. Optionally set the limits and routing: `FREE_DAILY_LIMIT`, `FREE_IP_DAILY_LIMIT`, `PRO_MONTHLY_LIMIT`, `PRO_PREMIUM_MONTHLY_LIMIT`, `PRO_PLAN_NAME`, `PRO_PRICE_LABEL`, `STANDARD_PROVIDER`, `PREMIUM_PROVIDER`, `DISABLED_PROVIDERS`, `FEATURE_ATTACHMENTS`, `FEATURE_OWN_KEY`, `MIN_EXTENSION_VERSION`, `UPDATE_MESSAGE`, `QUOTA_SALT`. See `.env.example`.
+3. Redeploy, then open `/api/chat?provider=deepseek`. The `usageCounting` block should show `"configured": true, "reachable": true`. `"activeNow"` turns true once paid-only access is on.
 
-Without the store there is no free tier: visitors get the paid-only message. Free chats are never counted in the extension when the server counts them.
+Without the store there is no free tier: visitors get the paid-only message. Changes to any of these need only a redeploy, never an extension update.
 
 ## Attachments
 
