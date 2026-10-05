@@ -11,7 +11,8 @@ Request headers:
 | Header | Required | Notes |
 |---|---|---|
 | `Content-Type: application/json` | yes | |
-| `X-License-Key` | only when paid gating is on | The customer's Polar license key. |
+| `X-License-Key` | for paid access | The customer's Polar license key. |
+| `X-Client-Id` | for the free allowance | A random UUID the extension makes on first run. Free chats are counted against it. |
 
 Request body:
 
@@ -19,7 +20,8 @@ Request body:
 |---|---|---|
 | `prompt` | string, required | The user's message. 1 to 6000 characters. |
 | `system` | string, optional | Mode instructions. Up to 4000 characters. Defaults to a short generic prompt. |
-| `provider` | string, optional | `auto` (default), `openai`, `deepseek`, `anthropic` or `v0`. |
+| `provider` | string, optional | `auto` (default), `openai`, `deepseek`, `anthropic` or `v0`. Ignored for free visitors, who always get the free provider. |
+| `attachments` | array, optional | Up to 3 files, **paid users only**. Each is `{ "name": "report.pdf", "mime": "application/pdf", "data": "<base64>" }`. See below. |
 
 ### Sample: Rewrite mode
 
@@ -53,13 +55,58 @@ Errors always look like `{ "ok": false, "error": "...", ... }`:
 | Status | `code` / `upstreamCode` | Meaning | Fix |
 |---|---|---|---|
 | 400 | | Missing `prompt`, or unknown `provider` | Fix the request |
-| 402 | `paid_required` | Gating is on and no license key was sent. Includes `upgradeUrl`. | Buy, or paste the license key |
+| 402 | `paid_required` | Gating is on and the caller is neither licensed nor able to use the free allowance. Includes `upgradeUrl`. | Buy, or paste the license key |
+| 402 | `free_limit_reached` | The device has used all of its free chats. Includes `quota` and `upgradeUrl`. | Upgrade, or use your own key |
+| 402 | `free_limit_ip` | This IP address used up its free chats for today | Try tomorrow, or upgrade |
+| 402 | `attachments_paid` | Attachments need a verified paid license | Upgrade |
+| 400 | `attachments_unsupported` | Images or PDFs sent to DeepSeek or v0, which can't read them | Use OpenAI, Anthropic or auto |
+| 400 / 413 | `unsupported_type`, `type_mismatch`, `attachments_too_large` | A file is not an allowed type, its bytes don't match its type, or the limits were exceeded | Fix the files |
+| 503 | `quota_unavailable` | The free-allowance store could not be reached (fails closed) | Retry shortly |
 | 401 | `license_invalid`, `license_revoked`, `license_expired` | The license was not accepted | Check the key or renew |
 | 413 | | `prompt` over 6000 or `system` over 4000 characters | Shorten it |
 | 503 | `license_unavailable` | Polar could not be reached, so the server refuses (fails closed) | Retry shortly |
 | 503 | `not_configured` | No provider key is set on Vercel | Add a key and redeploy |
 | 401, 402, 404, 429 and others | provider's code | The provider rejected the call. Includes `provider`, `upstreamStatus` and a `hint`. | Follow the `hint` |
 | 502 | | Provider or network failure | Retry |
+
+## Attachments (paid users)
+
+Premium users can attach images, PDFs and text files. The server checks the license first, then the files.
+
+| | |
+|---|---|
+| Types | PNG, JPEG, GIF, WebP images; PDF; plain text, Markdown, CSV and JSON files |
+| Limits | 3 files, 3 MB in total, and 60,000 characters across text files. (Vercel rejects bodies over 4.5 MB, and base64 adds a third.) |
+| Checks | Each file's real bytes must match its type (a renamed `.exe` or a text file called `.png` is refused). File names are cleaned. |
+| Providers | **OpenAI** and **Anthropic** read images and PDFs. **DeepSeek** and **v0** are text-only, so they accept text files only (added to the prompt) and refuse images and PDFs with a message. With `auto`, a provider that can read them is chosen. |
+| Not stored | Files are passed to the provider and not kept. The extension keeps only the file names in the chat history. |
+
+Sample payload:
+
+```json
+{
+  "prompt": "Summarize this report and describe the chart.",
+  "system": "You are a precise summariser. ...",
+  "provider": "auto",
+  "attachments": [
+    { "name": "report.pdf", "mime": "application/pdf", "data": "JVBERi0xLjQK..." },
+    { "name": "chart.png", "mime": "image/png", "data": "iVBORw0KGgo..." }
+  ]
+}
+```
+
+## Free allowance
+
+When paid-only access is on, a visitor with no license gets a few chats on one cheap model, counted **on the server**:
+
+- The extension makes a random id on first run and sends it as `X-Client-Id`. The count is kept against a keyed hash of it (never the raw id) in a Redis store (Upstash), so clearing the extension's data does not reset it.
+- A second counter limits each IP address per day (stored only as a keyed hash, and deleted after about two days) (`FREE_IP_DAILY_LIMIT`), so making new ids by reinstalling gets a script only so far. This is a speed bump, not an identity check; hard limits need accounts.
+- The chat is reserved before the model is called and given back if the call fails, so failures cost nothing.
+- Free chats always use `FREE_PROVIDER` (default: the first of DeepSeek, OpenAI, Anthropic that has a key), and cannot attach files.
+- If the store is not configured, there is no free tier and visitors get the paid-only message. If the store is down, free chats fail closed with `quota_unavailable` rather than going uncounted.
+- With paid-only access off, nothing is counted and nothing is restricted.
+
+`GET /api/chat?quota=1` with an `X-Client-Id` header returns `{ "ok": true, "enabled": true, "used": 3, "limit": 10, "remaining": 7 }`. `GET /api/chat?info=1` includes `freeQuota` (true when the server keeps a count) and `freeLimit`.
 
 ## `GET /api/chat`: connection report
 
@@ -94,7 +141,7 @@ Sample response:
 Cheap and safe: no provider calls and nothing secret. The extension reads it on open to know where the Upgrade button goes.
 
 ```json
-{ "ok": true, "gated": true, "environment": "production", "upgradeUrl": "https://buy.polar.sh/polar_cl_..." }
+{ "ok": true, "gated": true, "environment": "production", "upgradeUrl": "https://buy.polar.sh/polar_cl_...", "freeQuota": true, "freeLimit": 10 }
 ```
 
 `upgradeUrl` is `null` unless the checkout link is set and uses `https`. `environment` is `sandbox` when `POLAR_ENV=sandbox`; the extension then shows a "test mode" note.

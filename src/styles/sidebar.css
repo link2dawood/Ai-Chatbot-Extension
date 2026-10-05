@@ -114,7 +114,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .settings-status.error { color: var(--danger); }
 .version-note { color: var(--muted); font-size: 9px; text-align: center; margin: 18px 0; }
 
-.toast { position: fixed; z-index: 50; left: 50%; bottom: 86px; transform: translate(-50%, 10px); background: #262925; color: #fff; padding: 8px 10px; border-radius: 8px; font-size: 9.5px; opacity: 0; pointer-events: none; transition: .16s ease; box-shadow: var(--shadow); white-space: nowrap; }
+.toast { position: fixed; z-index: 50; left: 50%; bottom: 86px; transform: translate(-50%, 10px); background: #262925; color: #fff; padding: 8px 10px; border-radius: 8px; font-size: 9.5px; opacity: 0; pointer-events: none; transition: .16s ease; box-shadow: var(--shadow); white-space: normal; max-width: 300px; text-align: center; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 body.dark {
@@ -177,3 +177,13 @@ body.dark .quota-meter { background: #30342f; }
 .limit-card strong { display: block; font-size: 12px; }
 .limit-card p { margin: 6px 0 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .limit-card .plan-actions { margin: 0; }
+
+.attach-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 8px; }
+.attach-list[hidden] { display: none; }
+.attach-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 4px 3px 9px; border: 1px solid var(--line-strong); border-radius: 99px; background: var(--surface-soft); font-size: 10px; color: var(--ink); }
+.attach-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px; }
+.attach-chip small { color: var(--muted); font-size: 9px; }
+.attach-chip button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 4px; }
+.attach-chip button:hover { color: var(--danger); }
+.file-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; justify-content: flex-end; }
+.file-tags span { padding: 2px 7px; border-radius: 99px; background: var(--surface-soft); border: 1px solid var(--line); color: var(--muted); font-size: 9px; }

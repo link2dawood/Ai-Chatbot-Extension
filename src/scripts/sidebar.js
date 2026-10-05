@@ -1,6 +1,7 @@
 import { renderMarkdown } from "../lib/markdown.js";
 import { MODE_PROMPTS } from "../lib/prompts.js";
-import { sendAssistantRequest, checkProviders, fetchServerInfo, PROVIDER_OPTIONS } from "../lib/api.js";
+import { sendAssistantRequest, checkProviders, fetchQuota, fetchServerInfo, PROVIDER_OPTIONS } from "../lib/api.js";
+import { ACCEPT, checkPicked, formatSize, needsVision, readAttachment } from "../lib/attachments.js";
 import { BYOK_PROVIDERS, BYOK_IDS, keyProblem, maskKey, sendOwnKeyRequest, testOwnKey } from "../lib/byok.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -75,7 +76,10 @@ let settings = { ...DEFAULT_SETTINGS };
 let history = [];
 let freeChatsUsed = 0;
 let byok = null; // { provider, key, model, enabled }: the user's own API key, kept only in this browser
-let serverInfo = null; // { gated, environment, upgradeUrl } from the server
+let serverInfo = null; // { gated, environment, upgradeUrl, freeQuota } from the server
+let serverQuota = null; // { used, limit, remaining }: the free allowance as counted by the server (null = not counted there)
+let clientId = ""; // random id made on first run; the server counts free chats against it
+let pendingFiles = []; // files attached to the message being written (Premium)
 let isLoading = false;
 let lastAssistantText = "";
 let toastTimer = null;
@@ -92,7 +96,9 @@ function storageGet(keys) { return new Promise(resolve => chrome.storage.local.g
 function storageSet(data) { return new Promise(resolve => chrome.storage.local.set(data, resolve)); }
 
 async function init() {
-  const stored = await storageGet(["settings", "chatHistory", "freeChatsUsed", "byok"]);
+  const stored = await storageGet(["settings", "chatHistory", "freeChatsUsed", "byok", "clientId"]);
+  clientId = typeof stored.clientId === "string" && stored.clientId ? stored.clientId : crypto.randomUUID();
+  if (clientId !== stored.clientId) await storageSet({ clientId });
   settings = { ...DEFAULT_SETTINGS, ...(stored.settings || {}) };
   byok = stored.byok?.key && BYOK_PROVIDERS[stored.byok.provider] ? stored.byok : null;
   history = Array.isArray(stored.chatHistory) ? stored.chatHistory.slice(-50) : [];
@@ -139,6 +145,15 @@ function bindEvents() {
   $("#testConnection").addEventListener("click", testConnection);
   $("#saveLicense").addEventListener("click", saveLicense);
   $("#ownKeyBtn").addEventListener("click", openOwnKeySettings);
+  $("#fileInput").accept = ACCEPT;
+  $("#attachBtn").addEventListener("click", onAttachClick);
+  $("#fileInput").addEventListener("change", onFilesPicked);
+  $("#attachList").addEventListener("click", (event) => {
+    const remove = event.target.closest("[data-remove-attachment]");
+    if (!remove) return;
+    pendingFiles.splice(Number(remove.dataset.removeAttachment), 1);
+    renderAttachments();
+  });
   $("#saveByok").addEventListener("click", saveByok);
   $("#removeByok").addEventListener("click", removeByok);
   $("#byokProvider").addEventListener("change", () => { $("#byokKey").value = ""; setByokStatus("", ""); fillByokFields(); });
@@ -261,6 +276,43 @@ function applyServerInfo(info) {
   serverInfo = info;
   showUpgrade(info.upgradeUrl);
   $("#envNote").hidden = info.environment !== "sandbox";
+  if (info.freeQuota && !unlimited()) fetchQuota({ clientId }).then(quota => { serverQuota = quota; updateQuotaUI(); });
+}
+
+// Free chats left: the server's count when it keeps one, otherwise this browser's.
+const freeLimit = () => serverQuota?.limit ?? FREE_CHAT_LIMIT;
+const freeRemaining = () => serverQuota ? serverQuota.remaining : Math.max(0, FREE_CHAT_LIMIT - freeChatsUsed);
+
+// ---- attachments (Premium) ----
+
+function renderAttachments() {
+  const list = $("#attachList");
+  list.hidden = !pendingFiles.length;
+  list.innerHTML = pendingFiles.map((file, i) => `
+    <span class="attach-chip"><span title="${escapeAttr(file.name)}">${escapeText(file.name)}</span><small>${formatSize(file.size)}</small><button type="button" data-remove-attachment="${i}" aria-label="Remove ${escapeAttr(file.name)}">×</button></span>`).join("");
+  updateComposer();
+}
+
+function onAttachClick() {
+  if (!hasLicense()) {
+    showLimitCard({ title: "Attachments are a Premium feature", body: "Upgrade to add images, PDFs and text files to your chat.", ownKey: false });
+    return;
+  }
+  $("#fileInput").click();
+}
+
+async function onFilesPicked(event) {
+  const picked = [...event.target.files];
+  event.target.value = "";
+  if (!picked.length) return;
+  const problem = checkPicked(pendingFiles, picked);
+  if (problem) return toast(problem);
+  try {
+    for (const file of picked) pendingFiles.push(await readAttachment(file));
+  } catch {
+    toast("Could not read that file.");
+  }
+  renderAttachments();
 }
 
 // ---- your own API key ----
@@ -349,19 +401,19 @@ async function removeByok() {
   updateQuotaUI();
 }
 
-// Shown in the chat when the free allowance is used up.
-function showLimitCard() {
+// A card in the chat that explains a limit and offers the way past it.
+function showLimitCard({ title, body, ownKey = true } = {}) {
   $("#limitCard")?.remove();
   const card = document.createElement("div");
   card.id = "limitCard";
   card.className = "limit-card";
   const upgrade = serverInfo?.upgradeUrl;
   card.innerHTML = `
-    <strong>You have used your ${FREE_CHAT_LIMIT} free chats</strong>
-    <p>Keep going with Premium Access, or add your own API key for unlimited chats.</p>
+    <strong>${escapeText(title || `You have used your ${freeLimit()} free chats`)}</strong>
+    <p>${escapeText(body || "Keep going with Premium Access, or add your own API key for unlimited chats.")}</p>
     <div class="plan-actions">
       ${upgrade ? `<a class="plan-btn primary" href="${escapeAttr(upgrade)}" target="_blank" rel="noopener">Upgrade to Premium</a>` : ""}
-      <button class="plan-btn" type="button" data-open-own-key>Use your own key</button>
+      ${ownKey ? '<button class="plan-btn" type="button" data-open-own-key>Use your own key</button>' : ""}
     </div>`;
   chatBox.append(card);
   scrollToBottom();
@@ -462,12 +514,12 @@ async function persistQuota() { await storageSet({ freeChatsUsed }); }
 function renderHistory() {
   chatBox.innerHTML = "";
   if (!history.length) return renderEmptyState();
-  history.forEach(item => addMessageToDOM(item.role, item.text, false, item.error));
+  history.forEach(item => addMessageToDOM(item.role, item.text, false, item.error, item.files));
   lastAssistantText = [...history].reverse().find(item => item.role === "assistant" && !item.error)?.text || "";
   scrollToBottom();
 }
 
-function addMessageToDOM(role, text, animate = true, error = false) {
+function addMessageToDOM(role, text, animate = true, error = false, files = []) {
   const wrapper = document.createElement("div");
   wrapper.className = `message ${role}${error ? " error" : ""}`;
   if (!animate) wrapper.style.animation = "none";
@@ -475,6 +527,12 @@ function addMessageToDOM(role, text, animate = true, error = false) {
   bubble.className = "bubble";
   bubble.innerHTML = role === "assistant" ? renderMarkdown(text) : escapeText(text).replace(/\n/g, "<br>");
   wrapper.append(bubble);
+  if (role === "user" && files?.length) {
+    const tags = document.createElement("div");
+    tags.className = "file-tags";
+    tags.innerHTML = files.map(name => `<span>${escapeText(name)}</span>`).join("");
+    wrapper.append(tags);
+  }
   if (role === "assistant" && !error) {
     const actions = document.createElement("div");
     actions.className = "message-actions";
@@ -501,36 +559,47 @@ function showTyping() {
 function removeTyping() { $("#typingMessage")?.remove(); }
 
 async function sendCurrentMessage() {
-  const text = inputText.value.trim();
+  const files = [...pendingFiles];
+  const typed = inputText.value.trim();
+  const text = typed || (files.length ? "Please look at the attached file(s)." : "");
   if (!text || isLoading) return;
-  if (!unlimited() && freeChatsUsed >= FREE_CHAT_LIMIT) {
+  if (!unlimited() && freeRemaining() <= 0) {
     showLimitCard();
     updateQuotaUI();
     return;
+  }
+  if (needsVision(files) && ["deepseek", "v0"].includes(settings.provider)) {
+    return toast(`${providerLabel(settings.provider)} cannot read images or PDFs. Choose Auto, OpenAI or Anthropic.`);
   }
   $("#limitCard")?.remove();
 
   isLoading = true;
   inputText.value = "";
+  pendingFiles = [];
+  renderAttachments();
   autoSizeInput();
   updateComposer();
-  history.push({ role: "user", text, at: Date.now() });
-  addMessageToDOM("user", text);
+  const fileNames = files.map(file => file.name);
+  chatBox.querySelector(".starter-list")?.remove(); // the suggestions are for an empty chat
+  history.push({ role: "user", text, ...(fileNames.length ? { files: fileNames } : {}), at: Date.now() });
+  const userMessage = addMessageToDOM("user", text, true, false, fileNames);
   await persistHistory();
   showTyping();
   connectionLabel.textContent = "Working…";
 
   try {
     const mode = MODES[settings.mode] || MODES.chat;
-    const useOwnKey = hasOwnKey();
+    // Attachments are a hosted, Premium feature, so they always go through our server.
+    const useOwnKey = hasOwnKey() && !files.length;
     const result = useOwnKey
       ? await sendOwnKeyRequest({ provider: byok.provider, key: byok.key, model: byok.model, prompt: text, system: mode.system })
-      : await sendAssistantRequest({ prompt: text, system: mode.system, provider: settings.provider, licenseKey: settings.licenseKey });
+      : await sendAssistantRequest({ prompt: text, system: mode.system, provider: settings.provider, licenseKey: settings.licenseKey, clientId, attachments: files });
     removeTyping();
     lastAssistantText = result.text;
     history.push({ role: "assistant", text: result.text, at: Date.now() });
-    // Only chats on our hosted models use the free allowance.
-    if (!useOwnKey && !hasLicense()) freeChatsUsed += 1;
+    // The server counts free chats when it can; otherwise this browser does.
+    if (result.quota) serverQuota = result.quota;
+    else if (!useOwnKey && !hasLicense()) freeChatsUsed += 1;
     addMessageToDOM("assistant", result.text);
     await Promise.all([persistHistory(), persistQuota()]);
     updateQuotaUI();
@@ -539,13 +608,29 @@ async function sendCurrentMessage() {
     console.error("[Smart Chat] Chat request error", {
       message: error?.message,
       status: error?.status,
+      code: error?.code,
       upstreamStatus: error?.upstreamStatus,
       upstreamCode: error?.upstreamCode,
       provider: error?.provider,
-      retryAfter: error?.retryAfter,
-      error
+      retryAfter: error?.retryAfter
     });
     removeTyping();
+    if (error.code === "free_limit_reached" || error.code === "free_limit_ip") {
+      // Not an error to keep in the chat: take the message back and offer the way forward.
+      if (error.quota) serverQuota = error.quota;
+      history.pop();
+      userMessage.remove();
+      await persistHistory();
+      if (!history.length) renderEmptyState();
+      inputText.value = typed;
+      pendingFiles = files;
+      renderAttachments();
+      autoSizeInput();
+      showLimitCard(error.code === "free_limit_ip" ? { body: error.message } : {});
+      updateQuotaUI();
+      connectionLabel.textContent = "Limit reached";
+      return;
+    }
     const message = friendlyError(error);
     history.push({ role: "assistant", text: message, at: Date.now(), error: true });
     addMessageToDOM("assistant", message, true, true);
@@ -558,10 +643,11 @@ async function sendCurrentMessage() {
 }
 
 function friendlyError(error) {
-  if (error.code === "paid_required" || String(error.code || "").startsWith("license_")) {
+  if (error.code === "paid_required" || error.code === "attachments_paid" || String(error.code || "").startsWith("license_")) {
     showUpgrade(error.upgradeUrl);
     return error.message;
   }
+  if (error.status === 413 && !error.code) return "The files are too large to send. Keep them under 3 MB in total.";
   const name = error.provider ? providerLabel(error.provider) : "The AI service";
   if (error.status === 0) return error.message;
   if (error.status === 429 && !error.hint) {
@@ -573,8 +659,8 @@ function friendlyError(error) {
 }
 
 function updateQuotaUI() {
-  const remaining = Math.max(0, FREE_CHAT_LIMIT - freeChatsUsed);
-  const usedPercent = Math.min(100, Math.round((freeChatsUsed / FREE_CHAT_LIMIT) * 100));
+  const remaining = freeRemaining();
+  const usedPercent = Math.min(100, Math.round(((freeLimit() - remaining) / freeLimit()) * 100));
   if (hasOwnKey()) {
     $("#quotaLabel").textContent = "Your key";
     $("#quotaText").textContent = `${BYOK_PROVIDERS[byok.provider].label}, unlimited`;
@@ -595,7 +681,8 @@ function updateQuotaUI() {
 
 function updateComposer() {
   charCounter.textContent = `${inputText.value.length} / 6000`;
-  sendBtn.disabled = isLoading || !inputText.value.trim() || (!unlimited() && freeChatsUsed >= FREE_CHAT_LIMIT);
+  const hasInput = Boolean(inputText.value.trim()) || pendingFiles.length > 0;
+  sendBtn.disabled = isLoading || !hasInput || (!unlimited() && freeRemaining() <= 0);
 }
 
 function autoSizeInput() {
