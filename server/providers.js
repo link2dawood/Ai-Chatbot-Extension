@@ -85,8 +85,19 @@ export function readModel(provider, env = process.env) {
   return typeof value === "string" && value.trim() ? value.trim() : PROVIDERS[provider].defaultModel;
 }
 
+// Providers switched off in Vercel with DISABLED_PROVIDERS (comma separated). v0 is off unless
+// the variable is set, e.g. DISABLED_PROVIDERS= (empty) turns everything back on.
+export function disabledProviders(env = process.env) {
+  const raw = env.DISABLED_PROVIDERS;
+  const list = raw === undefined ? ["v0"] : String(raw).split(",");
+  return list.map(item => item.trim().toLowerCase()).filter(Boolean);
+}
+
+export const isDisabled = (provider, env = process.env) => disabledProviders(env).includes(provider);
+
+// Usable means a key is set and the provider is not disabled.
 export function isConfigured(provider, env = process.env) {
-  return Boolean(readKey(provider, env).key);
+  return Boolean(readKey(provider, env).key) && !isDisabled(provider, env);
 }
 
 // Best-effort guess at a key pasted into the wrong variable. Only used as a hint.
@@ -413,6 +424,9 @@ export async function checkProvider(provider, { verify = false, env = process.en
   const { key, warnings } = readKey(provider, env);
   const model = readModel(provider, env);
   const base = { provider, label, keyEnv, model, configured: Boolean(key), verified: false, warnings };
+  if (isDisabled(provider, env)) {
+    return { ...base, ok: false, disabled: true, stage: "config", error: `${label} is disabled on this server.`, hint: `Remove "${provider}" from DISABLED_PROVIDERS in Vercel to enable it.` };
+  }
   if (!key) {
     const error = notConfigured(provider);
     return { ...base, ok: false, stage: error.stage, error: error.message, hint: error.hint };

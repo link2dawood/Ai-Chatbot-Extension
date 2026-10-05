@@ -187,3 +187,15 @@ body.dark .quota-meter { background: #30342f; }
 .attach-chip button:hover { color: var(--danger); }
 .file-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; justify-content: flex-end; }
 .file-tags span { padding: 2px 7px; border-radius: 99px; background: var(--surface-soft); border: 1px solid var(--line); color: var(--muted); font-size: 9px; }
+
+.update-banner { margin: 10px 14px 0; padding: 9px 11px; border: 1px solid var(--danger); border-radius: 10px; background: var(--surface); color: var(--ink); font-size: 10.5px; line-height: 1.45; }
+.update-banner[hidden] { display: none; }
+.perk-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.perk-list:empty { display: none; }
+.perk-list li { position: relative; padding: 3px 0 3px 15px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.perk-list li::before { content: ""; position: absolute; left: 2px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.perk-title { margin: 10px 0 0; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; color: var(--muted); }
+.quality-btn.is-on { color: var(--accent); font-weight: 700; }
+.quality-btn.is-on svg { fill: currentColor; }
+.mini-button[hidden], .plan-btn[hidden] { display: none; }
+.attach-note { flex-basis: 100%; color: var(--muted); font-size: 9.5px; }

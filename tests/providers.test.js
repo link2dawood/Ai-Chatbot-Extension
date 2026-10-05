@@ -4,7 +4,7 @@ import handler from "../api/chat.js";
 import { checkProvider, detectKeyMismatch, readKey, resolveProvider } from "../server/providers.js";
 
 const KEY_VARS = ["OPENAI_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY", "V0_API_KEY", "AI_PROVIDER",
-  "OPENAI_MODEL", "DEEPSEEK_MODEL", "ANTHROPIC_MODEL", "V0_MODEL", "ANTHROPIC_EFFORT"];
+  "OPENAI_MODEL", "DEEPSEEK_MODEL", "ANTHROPIC_MODEL", "V0_MODEL", "ANTHROPIC_EFFORT", "DISABLED_PROVIDERS"];
 // Built at runtime so secret scanners don't mistake the fixture for a real key.
 const FAKE_DEEPSEEK_KEY = ["sk", "0123456789abcdef".repeat(2)].join("-");
 const realFetch = globalThis.fetch;
@@ -59,8 +59,10 @@ test("health check lists every provider and reports missing keys", async () => {
   for (const result of Object.values(res.body.providers)) {
     assert.equal(result.configured, false);
     assert.equal(result.ok, false);
-    assert.match(result.hint, /Environment Variables/);
+    // v0 is disabled by default; the others just need a key
+    assert.match(result.hint, result.provider === "v0" ? /DISABLED_PROVIDERS/ : /Environment Variables/);
   }
+  assert.equal(res.body.providers.v0.disabled, true);
   assert.equal(calls.length, 0, "no network calls without keys");
 });
 
@@ -138,6 +140,7 @@ test("Anthropic authentication errors are normalized", async () => {
 });
 
 test("v0 404 explains the plan requirement", async () => {
+  process.env.DISABLED_PROVIDERS = ""; // v0 is off by default; this test turns it on
   process.env.V0_API_KEY = "v0-key";
   stubFetch([[url => url.startsWith("https://api.v0.dev/"), () => json(404, { error: "Not found" })]]);
   const result = await checkProvider("v0");
@@ -245,6 +248,7 @@ test("DeepSeek defaults to deepseek-flash", async () => {
 });
 
 test("v0 reports an unavailable model when its model list says so, and ignores an unavailable list", async () => {
+  process.env.DISABLED_PROVIDERS = "";
   process.env.V0_API_KEY = "v0-key";
   stubFetch([
     [url => url === "https://api.v0.dev/v1/rate-limits", () => json(200, {})],
