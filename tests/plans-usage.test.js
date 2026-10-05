@@ -333,7 +333,7 @@ test("config: plans, limits, copy, prompts and switches come from the environmen
   assert.deepEqual(c.plans.pro, { name: "Premium Access", price: "$2/month", period: "month", limit: 500, premiumLimit: 30,
     perks: ["500 AI messages per month", "30 premium (Claude) requests per month", "Attach images, PDFs and text files"] });
   assert.deepEqual(c.features, { attachments: true, ownKey: true, premium: true });
-  assert.deepEqual(Object.keys(c.modes).sort(), ["chat", "explain", "grammar", "reply", "rewrite", "summarize"]);
+  assert.deepEqual(Object.keys(c.modes).sort(), ["chat", "explain", "grammar", "learn", "reply", "rewrite", "summarize"]);
   assert.equal(c.modes.rewrite.system, MODE_PROMPTS.rewrite);
   assert.equal(c.minExtensionVersion, null);
 
@@ -396,6 +396,18 @@ test("intents: added to the rewrite prompt on the server, ignored in other modes
   assert.match(sent.deepseek.messages[0].content, /firm but respectful/);
   await pro({ mode: "chat", intent: "disagree" });
   assert.equal(sent.deepseek.messages[0].content, MODE_PROMPTS.chat);
+});
+
+test("reply and style: options and the writing profile reach the prompt only for Rewrite and Reply", async () => {
+  await pro({ mode: "reply", intent: "ask", style: "Tone: Direct" });
+  const sys = sent.deepseek.messages[0].content;
+  assert.ok(sys.startsWith(MODE_PROMPTS.reply));
+  assert.match(sys, /specific question/);
+  assert.match(sys, /Tone: Direct/);
+  await pro({ mode: "chat", style: "Tone: Direct" });
+  assert.equal(sent.deepseek.messages[0].content, MODE_PROMPTS.chat);
+  await pro({ mode: "learn", style: "Tone: Direct", intent: "ask" });
+  assert.equal(sent.deepseek.messages[0].content, MODE_PROMPTS.learn);
 });
 
 test("versions: MIN_EXTENSION_VERSION asks older (or unlabelled) extensions to update, and only then", async () => {

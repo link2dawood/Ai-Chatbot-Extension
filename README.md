@@ -7,6 +7,8 @@ Chrome Manifest V3 side-panel assistant with Chat, Reply ("What should I say?"),
 - 10 successful free chats per local Chrome profile
 - Chat / Reply / Rewrite / Grammar / Summarize / Explain modes
 - Reply: select a message you received and get four ready-to-send replies (Professional, Persuasive, Short, Friendly)
+- Reply options: Reply, Reply + ask a question, Reply + follow up, Reply + close. Select a whole email thread or chat and it answers the latest message using the earlier ones
+- My writing profile (tone, sentence length, vocabulary, formality, personality, things to avoid) and "Learn my style" from your own writing samples; Rewrite and Reply follow it. Stored only in the browser
 - Rewrite intents: Agree, Disagree, Ask for clarification, Negotiate, Follow up, Decline, Apologize, Persuade, Escalate, Thank, Request, Remind
 - Copy, insert into page, clear history, export, light/dark theme
 - Vercel serverless API route at `api/chat.js`

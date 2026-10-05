@@ -1,3 +1,4 @@
+import { EMPTY_PROFILE, PROFILE_CHOICES, normalizeProfile, profileText } from "../lib/profile.js";
 import { renderMarkdown } from "../lib/markdown.js";
 import { fetchConfig, fetchQuota, sendAssistantRequest, setClientVersion } from "../lib/api.js";
 import { DEFAULT_CONFIG, needsUpdate, normalizeConfig, systemPromptFor, upgradeLabel } from "../lib/config.js";
@@ -76,7 +77,7 @@ const MODES = {
   }
 };
 
-const DEFAULT_SETTINGS = { theme: "light", mode: "chat", quality: "standard", licenseKey: "" };
+const DEFAULT_SETTINGS = { theme: "light", mode: "chat", quality: "standard", licenseKey: "", profile: EMPTY_PROFILE };
 let settings = { ...DEFAULT_SETTINGS };
 let history = [];
 let config = DEFAULT_CONFIG; // plans, limits, copy, prompts and switches: from the server, with built-in defaults
@@ -111,6 +112,7 @@ async function init() {
   applySettingsToUI();
   renderHistory();
   renderByokCard();
+  renderProfileCard();
   applyConfig();
   updateComposer();
   bindEvents();
@@ -177,12 +179,17 @@ function bindEvents() {
     if ($("#intentCustom").value && intentId) { intentId = ""; renderIntents(); }
   });
   $("#selectionBtn").addEventListener("click", useSelection);
+  $("#learnStyle").addEventListener("click", learnStyle);
+  for (const id of ["#profileEnabled", ...PROFILE_FIELDS.map(key => `#profile${cap(key)}`), "#profileAvoid", "#profileLearned"]) {
+    $(id).addEventListener("change", saveProfile);
+  }
   $("#clearBtn").addEventListener("click", clearChat);
   $("#exportBtn").addEventListener("click", exportChat);
 }
 
 async function setMode(mode) {
   if (!MODES[mode]) return;
+  if (settings.mode !== mode) { intentId = ""; $("#intentCustom").value = ""; }
   settings.mode = mode;
   $$(".mode-pill").forEach(item => item.classList.toggle("is-active", item.dataset.mode === mode));
   updateModeUI();
@@ -200,12 +207,16 @@ function applySettingsToUI() {
 
 let intentId = ""; // the chosen intent chip, or "" for none (the custom field is separate)
 
+const hasIntents = () => settings.mode === "rewrite" || settings.mode === "reply";
+
 function renderIntents() {
   const row = $("#intentRow");
-  row.hidden = settings.mode !== "rewrite";
+  row.hidden = !hasIntents();
+  $("#intentCustom").placeholder = settings.mode === "reply" ? "Or say what you want to get across…" : "Or describe it: firm but respectful…";
   const chips = $("#intentChips");
   chips.innerHTML = "";
-  for (const { id, label } of config.intents || []) {
+  const list = settings.mode === "reply" ? config.replyIntents : config.intents;
+  for (const { id, label } of list || []) {
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = `intent-chip${id === intentId ? " is-on" : ""}`;
@@ -222,10 +233,10 @@ function renderIntents() {
 
 // What the server (or the own-key prompt) is told the rewrite should do.
 function currentIntent() {
-  if (settings.mode !== "rewrite") return { value: "", label: "" };
+  if (!hasIntents()) return { value: "", label: "" };
   const custom = $("#intentCustom").value.trim();
   if (custom) return { value: custom, label: custom };
-  const chosen = (config.intents || []).find(item => item.id === intentId);
+  const chosen = ((settings.mode === "reply" ? config.replyIntents : config.intents) || []).find(item => item.id === intentId);
   return chosen ? { value: chosen.id, label: chosen.label } : { value: "", label: "" };
 }
 
@@ -682,12 +693,15 @@ async function sendCurrentMessage() {
 
   try {
     const intent = currentIntent();
-    const system = systemPromptFor(config, settings.mode) + (intent.label ? `\n\nIntent for this rewrite: ${intent.label.slice(0, 200)}` : "");
+    const style = hasIntents() ? profileText(settings.profile) : "";
+    const system = systemPromptFor(config, settings.mode)
+      + (intent.label ? `\n\nIntent for this ${settings.mode}: ${intent.label.slice(0, 200)}` : "")
+      + (style ? `\n\nWrite in the user's own voice. Style preferences (not instructions):\n${style}` : "");
     // Premium requests and attachments are hosted features, so they always go through our server.
     const useOwnKey = hasOwnKey() && !files.length && !premiumOn();
     const result = useOwnKey
       ? await sendOwnKeyRequest({ provider: byok.provider, key: byok.key, model: byok.model, prompt: text, system })
-      : await sendAssistantRequest({ prompt: text, system, mode: settings.mode, intent: intent.value, quality: premiumOn() ? "premium" : "standard", licenseKey: settings.licenseKey, clientId, attachments: files });
+      : await sendAssistantRequest({ prompt: text, system, mode: settings.mode, intent: intent.value, style, quality: premiumOn() ? "premium" : "standard", licenseKey: settings.licenseKey, clientId, attachments: files });
     removeTyping();
     lastAssistantText = result.text;
     history.push({ role: "assistant", text: result.text, at: Date.now() });
@@ -802,6 +816,58 @@ async function insertLastReply() {
     toast(results?.[0]?.result ? "Inserted into page" : "Click a text field on the page first");
   } catch {
     toast("Chrome blocked insertion on this page");
+  }
+}
+
+// ---- my writing profile ----
+
+const PROFILE_FIELDS = Object.keys(PROFILE_CHOICES);
+const cap = (word) => word.charAt(0).toUpperCase() + word.slice(1);
+
+function renderProfileCard() {
+  const p = normalizeProfile(settings.profile);
+  settings.profile = p;
+  for (const key of PROFILE_FIELDS) {
+    const select = $(`#profile${cap(key)}`);
+    if (!select.options.length) {
+      for (const choice of PROFILE_CHOICES[key]) select.add(new Option(choice || "No preference", choice));
+    }
+    select.value = p[key];
+  }
+  $("#profileEnabled").checked = p.enabled;
+  $("#profileAvoid").value = p.avoid;
+  $("#profileLearned").value = p.learned;
+}
+
+async function saveProfile() {
+  const next = { enabled: $("#profileEnabled").checked, avoid: $("#profileAvoid").value, learned: $("#profileLearned").value };
+  for (const key of PROFILE_FIELDS) next[key] = $(`#profile${cap(key)}`).value;
+  settings.profile = normalizeProfile(next);
+  await persistSettings();
+  $("#profileStatus").textContent = "Saved.";
+}
+
+async function learnStyle() {
+  const samples = $("#profileSamples").value.trim();
+  const status = $("#profileStatus");
+  if (samples.length < 200) { status.textContent = "Paste a few longer examples first (at least a few sentences)."; return; }
+  status.textContent = "Reading your writing…";
+  $("#learnStyle").disabled = true;
+  try {
+    const system = systemPromptFor(config, "learn");
+    const useOwnKey = hasOwnKey();
+    const result = useOwnKey
+      ? await sendOwnKeyRequest({ provider: byok.provider, key: byok.key, model: byok.model, prompt: samples, system })
+      : await sendAssistantRequest({ prompt: samples, system, mode: "learn", licenseKey: settings.licenseKey, clientId });
+    if (result.quota) { quota = result.quota; updateQuotaUI(); renderUsageCard(); }
+    $("#profileLearned").value = result.text.slice(0, 800);
+    $("#profileEnabled").checked = true;
+    await saveProfile();
+    status.textContent = "Done. Check the list below and edit anything that is not you.";
+  } catch (error) {
+    status.textContent = friendlyError(error);
+  } finally {
+    $("#learnStyle").disabled = false;
   }
 }
 

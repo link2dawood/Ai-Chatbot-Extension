@@ -167,7 +167,7 @@ test("system prompts over 4000 characters are rejected", async () => {
 });
 
 test("every mode has a non-trivial prompt that carries the shared rules", () => {
-  assert.deepEqual(MODE_IDS.sort(), ["chat", "explain", "grammar", "reply", "rewrite", "summarize"]);
+  assert.deepEqual(MODE_IDS.sort(), ["chat", "explain", "grammar", "learn", "reply", "rewrite", "summarize"]);
   for (const id of MODE_IDS) {
     const text = MODE_PROMPTS[id];
     assert.ok(text.length > 300 && text.length < 2000, `${id} length ${text.length}`);
