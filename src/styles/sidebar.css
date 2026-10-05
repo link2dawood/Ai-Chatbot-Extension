@@ -199,3 +199,9 @@ body.dark .quota-meter { background: #30342f; }
 .quality-btn.is-on svg { fill: currentColor; }
 .mini-button[hidden], .plan-btn[hidden] { display: none; }
 .attach-note { flex-basis: 100%; color: var(--muted); font-size: 9.5px; }
+
+.intent-row { padding: 0 14px 8px; }
+.intent-row[hidden] { display: none; }
+.intent-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 8px; }
+.intent-chip { border: 1px solid var(--line-strong); background: var(--surface); color: inherit; border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.intent-chip.is-on { background: var(--accent, #1f6f50); border-color: var(--accent, #1f6f50); color: #fff; }

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node --check background.js && node --check src/scripts/sidebar.js && node --check src/lib/api.js && node --check src/lib/config.js && node --check src/lib/markdown.js && node --check src/lib/prompts.js && node --check src/lib/byok.js && node --check src/lib/attachments.js && node --check server/providers.js && node --check server/entitlement.js && node --check server/attachments.js && node --check server/quota.js && node --check server/settings.js && node --check server/plans.js && node --check scripts/package.mjs && node --check api/chat.js",
+    "lint": "node --check background.js && node --check src/scripts/sidebar.js && node --check src/lib/api.js && node --check src/lib/config.js && node --check src/lib/markdown.js && node --check src/lib/prompts.js && node --check src/lib/byok.js && node --check src/lib/attachments.js && node --check server/providers.js && node --check server/entitlement.js && node --check server/attachments.js && node --check server/quota.js && node --check server/settings.js && node --check server/plans.js && node --check server/intents.js && node --check scripts/package.mjs && node --check api/chat.js",
     "test": "node --test tests/*.test.js",
     "package": "node scripts/package.mjs"
   },
